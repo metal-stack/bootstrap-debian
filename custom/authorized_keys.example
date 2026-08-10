@@ -1,0 +1,2 @@
+# One SSH public key per line:
+# ssh-ed25519 AAAA... user@host

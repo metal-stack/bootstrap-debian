@@ -1,0 +1,4 @@
+out/
+*.iso
+preseed.cfg
+custom/authorized_keys
