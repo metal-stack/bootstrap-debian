@@ -15,13 +15,12 @@ Settings are the variables at the top of `build-iso.sh`, all overridable via env
 
 `DEBIAN_RELEASE` (default `13.6.0`) drives everything else:
 
-- **Mirror suite.** The codename cannot be computed from a version number, so `build-iso.sh` looks it up in a [`case`](https://github.com/muhi/debian-unattended-raid1/blob/main/build-iso.sh) (11→bullseye … 14→forky) and renders it into `preseed.cfg`. An unknown major **aborts the build** instead of installing from the wrong suite. Override with `DEBIAN_SUITE=<codename>`, or add the release to the `case`.
+- **Mirror suite.** The codename cannot be computed from a version number, so `build-iso.sh` looks it up in a [`case`](https://github.com/metal-stack/bootstrap-debian/blob/main/build-iso.sh) (11→bullseye … 14→forky) and renders it into `preseed.cfg`. An unknown major **aborts the build** instead of installing from the wrong suite. Override with `DEBIAN_SUITE=<codename>`, or add the release to the `case`.
 - **Download URL.** `cdimage.debian.org/debian-cd/current/` only carries the newest point release; older ones move to `cdimage/archive/<version>/`. The build tries current first, then the archive.
 
 So a point release is `DEBIAN_RELEASE=13.7.0 ./build-iso.sh`, and a major release is that plus one line in the `case` if the codename is not listed yet. Neither touches the preseed.
 
 Only the 13 row has been installed from. The bullseye/bookworm/forky rows are lookups that were checked as strings, not exercised against a real ISO — and a preseed that works on 13 is not guaranteed to work on another major (see below).
-,
 
 ## Target requirements
 
