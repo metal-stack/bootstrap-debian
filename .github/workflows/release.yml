@@ -1,0 +1,61 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      debian_release:
+        description: 'DEBIAN_RELEASE to build against'
+        default: '13.6.0'
+  schedule:
+    - cron: '17 4 * * 1'  
+
+permissions:
+  contents: write
+
+env:
+  DEBIAN_RELEASE: ${{ inputs.debian_release || '13.6.0' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: sudo apt-get update && sudo apt-get install -y xorriso wget whois
+
+      - uses: actions/cache@v4
+        with:
+          path: out/debian-${{ env.DEBIAN_RELEASE }}-amd64-netinst.iso
+          key: netinst-${{ env.DEBIAN_RELEASE }}
+
+      - name: Build
+        env:
+          # dummy credentials - this ISO is a build check, never an artifact
+          USERHASH: '$6$ci$3xT0lTBnPzMHK'
+          SSH_PUBKEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGciTest ci@example'
+        run: ./build-iso.sh
+
+      - name: Verify the built ISO
+        run: ./verify-iso.sh
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Released is the tooling, not the ISO itself.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --notes "Getestet gegen Debian ${DEBIAN_RELEASE}.
+
+          \`\`\`sh
+          git checkout ${GITHUB_REF_NAME}
+          echo \"ssh-ed25519 AAAA... user@host\" > custom/authorized_keys
+          ./build-iso.sh
+          \`\`\`"

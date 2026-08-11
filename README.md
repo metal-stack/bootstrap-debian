@@ -1,4 +1,4 @@
-# Debian-Unattended-Raid1
+# Bootstrap Debian
 
 Debian netinst ISO with an embedded preseed. Boots, wipes two disks, installs onto RAID1 with LVM, powers off. No interaction.
 
@@ -47,5 +47,3 @@ Identical GPT on both disks: `bios_boot` (1 MB), ESP (512 MB), then three RAID1 
 ```sh
 LV_VAR_MAX=51200 ./build-iso.sh    # /var stops at 50 GB
 ```
-
-## Tests (TODO)

@@ -24,7 +24,7 @@ for dev in $(list-devices disk); do
 done
 
 if [ "$COUNT" -lt 2 ]; then
-    echo "raid-setup: RAID1 needs two disks, found $COUNT ($(echo $DISKS | cut -d' ' -f2))" >&2
+    echo "raid-setup: RAID1 needs two disks, found $COUNT ($(echo "$DISKS" | cut -d' ' -f2))" >&2
     exit 1
 fi
 
