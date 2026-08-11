@@ -52,7 +52,7 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             --generate-notes \
-            --notes "Getestet gegen Debian ${DEBIAN_RELEASE}.
+            --notes "Tested against Debian ${DEBIAN_RELEASE}.
 
           \`\`\`sh
           git checkout ${GITHUB_REF_NAME}
