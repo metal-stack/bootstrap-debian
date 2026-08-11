@@ -20,7 +20,7 @@ Settings are the variables at the top of `build-iso.sh`, all overridable via env
 
 So a point release is `DEBIAN_RELEASE=13.7.0 ./build-iso.sh`, and a major release is that plus one line in the `case` if the codename is not listed yet. Neither touches the preseed.
 
-Only the 13 row has been installed from. The bullseye/bookworm/forky rows are lookups that were checked as strings, not exercised against a real ISO — and a preseed that works on 13 is not guaranteed to work on another major (see below).
+Only the 13 row has been installed from. The bullseye/bookworm/forky rows are lookups that were checked as strings, not exercised against a real ISO — and a preseed that works on 13 is not guaranteed to work on another major.
 
 ## Target requirements
 
