@@ -9,7 +9,7 @@ on:
         description: 'DEBIAN_RELEASE to build against'
         default: '13.6.0'
   schedule:
-    - cron: '17 4 * * 1'  
+    - cron: '17 4 * * 1'
 
 permissions:
   contents: write
@@ -23,7 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - run: sudo apt-get update && sudo apt-get install -y xorriso wget whois
+      - run: sudo apt-get update && sudo apt-get install -y xorriso wget whois cpio xz-utils
+
+      - name: Import the Debian CD signing key
+        run: |
+          key=DF9B9C49EAA9298432589D76DA87E80D6294BE9B
+          for ks in keyring.debian.org keys.openpgp.org; do
+            gpg --keyserver "$ks" --recv-keys "$key" && exit 0
+            echo "::warning::$ks did not serve $key"
+          done
+          exit 1
 
       - uses: actions/cache@v4
         with:
@@ -35,6 +44,7 @@ jobs:
           # dummy credentials - this ISO is a build check, never an artifact
           USERHASH: '$6$ci$3xT0lTBnPzMHK'
           SSH_PUBKEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGciTest ci@example'
+          CHECK_SIGNATURE: 'yes'
         run: ./build-iso.sh
 
       - name: Verify the built ISO
