@@ -14,6 +14,11 @@ d-i netcfg/hostname string @HOSTNAME@
 d-i netcfg/get_hostname string @HOSTNAME@
 d-i netcfg/get_domain string @DOMAIN@
 d-i hw-detect/load_firmware boolean true
+@OFFLINE_ONLY@d-i netcfg/dhcp_failed note
+@OFFLINE_ONLY@d-i netcfg/dhcp_options select Do not configure the network at this time
+@OFFLINE_ONLY@d-i netcfg/get_nameservers string
+@OFFLINE_ONLY@d-i netcfg/no_default_route boolean true
+@OFFLINE_ONLY@d-i netcfg/confirm_static boolean true
 
 ### Mirror settings
 d-i mirror/country string manual
@@ -111,14 +116,16 @@ d-i base-installer/kernel/image string linux-image-amd64
 d-i apt-setup/non-free-firmware boolean true
 d-i apt-setup/non-free boolean false
 d-i apt-setup/contrib boolean false
-d-i apt-setup/services-select multiselect security, updates
+d-i apt-setup/services-select multiselect @APT_SERVICES@
 d-i apt-setup/security_host string security.debian.org
+d-i apt-setup/cdrom/set-first boolean false
+@OFFLINE_ONLY@d-i apt-setup/use_mirror boolean false
 
 ### Package selection
 tasksel tasksel/first multiselect none
 d-i pkgsel/include string openssh-server python3 mdadm
-d-i pkgsel/upgrade select full-upgrade
-d-i pkgsel/update-policy select unattended-upgrades
+d-i pkgsel/upgrade select @PKGSEL_UPGRADE@
+d-i pkgsel/update-policy select @UPDATE_POLICY@
 
 ### Disk detection
 d-i partman/early_command string sh /cdrom/custom/raid-setup.sh
@@ -136,7 +143,7 @@ d-i grub-installer/bootdev string default
 ### Finishing up the installation
 d-i preseed/late_command string \
  cp -r /cdrom/custom /target/custom; \
- sh /cdrom/custom/sync-esp.sh; \
+ sh /cdrom/custom/sync-esp.sh; @LATE_OFFLINE@\
  in-target sh -c 'usermod -p "!" root'; \
  in-target sh -c 'mkdir -p --mode=0700 /home/@USERNAME@/.ssh && cat /custom/authorized_keys > /home/@USERNAME@/.ssh/authorized_keys && chmod 0600 /home/@USERNAME@/.ssh/authorized_keys && chown -R 1000:1000 /home/@USERNAME@/.ssh'; \
  in-target sh -c 'sed -i "s/^#\?PermitRootLogin.*$/PermitRootLogin no/g" /etc/ssh/sshd_config'; \
