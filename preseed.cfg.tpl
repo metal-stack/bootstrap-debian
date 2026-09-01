@@ -37,12 +37,10 @@ d-i passwd/username string @USERNAME@
 d-i passwd/user-password-crypted password @USERHASH@
 d-i passwd/user-uid string 1000
 
-### Clock and time zone setup
 d-i clock-setup/utc boolean true
 d-i time/zone string @TIMEZONE@
 d-i clock-setup/ntp boolean true
 
-### Partitioning
 d-i partman-auto/method string raid
 d-i partman-partitioning/default_label string gpt
 d-i partman-lvm/device_remove_lvm boolean true
@@ -61,7 +59,6 @@ d-i partman-auto-lvm/new_vg_name string vg0
 d-i partman-auto-lvm/guided_size string 99%
 d-i partman-auto/cap-ram string 4096
 
-### Partman recipe
 d-i partman-auto/expert_recipe string         \
  multiraid ::                                 \
    1 1 1 free                                 \
@@ -134,7 +131,8 @@ d-i partman/early_command string sh /cdrom/custom/raid-setup.sh
 # without this a failed disk drops every later boot into an initramfs prompt
 d-i mdadm/boot_degraded boolean true
 
-### Boot loader installation
+@SERIAL_ONLY@d-i debian-installer/add-kernel-opts string @CONSOLE_ARGS@
+
 d-i grub-installer/only_debian boolean true
 d-i grub-installer/with_other_os boolean true
 d-i grub-installer/force-efi-extra-removable boolean true
@@ -143,7 +141,7 @@ d-i grub-installer/bootdev string default
 ### Finishing up the installation
 d-i preseed/late_command string \
  cp -r /cdrom/custom /target/custom; \
- sh /cdrom/custom/sync-esp.sh; @LATE_OFFLINE@\
+ sh /cdrom/custom/sync-esp.sh; @LATE_OFFLINE@@LATE_SERIAL@\
  in-target sh -c 'usermod -p "!" root'; \
  in-target sh -c 'mkdir -p --mode=0700 /home/@USERNAME@/.ssh && cat /custom/authorized_keys > /home/@USERNAME@/.ssh/authorized_keys && chmod 0600 /home/@USERNAME@/.ssh/authorized_keys && chown -R 1000:1000 /home/@USERNAME@/.ssh'; \
  in-target sh -c 'sed -i "s/^#\?PermitRootLogin.*$/PermitRootLogin no/g" /etc/ssh/sshd_config'; \
