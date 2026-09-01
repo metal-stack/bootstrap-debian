@@ -11,9 +11,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: shellcheck
-        env:
-          SHELLCHECK_OPTS: "-e SC2086,SC2016,SC2015"
-        run: shellcheck $(find . -name "*.sh") 
-      - name: tests
-        run: ./tests/run-tests.sh
+      - name: shellcheck and tests
+        run: make check
