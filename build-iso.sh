@@ -16,6 +16,7 @@ LV_VAR_MIN="${LV_VAR_MIN:-10240}"
 LV_VAR_MAX="${LV_VAR_MAX:-200000}"
 AUTHORIZED_KEYS_FILE="${AUTHORIZED_KEYS_FILE:-$SCRIPT_DIR/custom/authorized_keys}"
 SSH_PUBKEY="${SSH_PUBKEY:-}"
+SERIAL_CONSOLE="${SERIAL_CONSOLE-ttyS1,115200n8}"
 
 case "$DEBIAN_MAJOR" in
     11) DEFAULT_SUITE="bullseye" ;;
@@ -27,9 +28,6 @@ esac
 DEBIAN_SUITE="${DEBIAN_SUITE:-$DEFAULT_SUITE}"
 
 ISO_VARIANT="${ISO_VARIANT:-netinst}"
-SRC_NAME=""
-# The preseed values below reach the template through render_preseed's indirect
-# expansion, which shellcheck cannot see.
 # shellcheck disable=SC2034
 case "$ISO_VARIANT" in
     netinst)
@@ -56,7 +54,26 @@ case "$ISO_VARIANT" in
         UPDATE_POLICY="none"
         LATE_OFFLINE="sh /cdrom/custom/offline-post.sh $DEBIAN_SUITE; "
         ;;
+    *)  echo "[x] Unknown ISO_VARIANT '$ISO_VARIANT'. Use 'netinst' or 'offline'."
+        exit 1 ;;
 esac
+
+# shellcheck disable=SC2034
+if [ -n "$SERIAL_CONSOLE" ]; then
+    SERIAL_ONLY=""
+    CONSOLE_ARGS="console=tty0 console=$SERIAL_CONSOLE"
+    LATE_SERIAL="sh /cdrom/custom/serial-console.sh; "
+    SERIAL_UNIT="${SERIAL_CONSOLE%%,*}"
+    SERIAL_UNIT="${SERIAL_UNIT#ttyS}"
+    SERIAL_SPEED="${SERIAL_CONSOLE#*,}"
+    SERIAL_SPEED="${SERIAL_SPEED%%[!0-9]*}"
+else
+    SERIAL_ONLY="# "
+    CONSOLE_ARGS=""
+    LATE_SERIAL=""
+    SERIAL_UNIT=""
+    SERIAL_SPEED=""
+fi
 
 DEBIAN_ISO_URLS=(
     "https://cdimage.debian.org/debian-cd/current/amd64/$SRC_SUBDIR/$SRC_NAME"
@@ -72,13 +89,9 @@ OUTPUT_ISO="${OUT_DIR}/${OUTPUT_NAME}"
 WORK_DIR=""
 USER_HASH=""
 
-PRESEED_ARGS="auto=true priority=critical locale=$LOCALE keymap=$KEYMAP hostname=$TARGET_HOSTNAME domain=$TARGET_DOMAIN preseed/file=/preseed.cfg"
+PRESEED_ARGS="auto=true priority=critical locale=$LOCALE keymap=$KEYMAP hostname=$TARGET_HOSTNAME domain=$TARGET_DOMAIN preseed/file=/preseed.cfg${CONSOLE_ARGS:+ $CONSOLE_ARGS}"
 
 check_deps() {
-    if [ -z "$SRC_NAME" ]; then
-        echo "[x] Unknown ISO_VARIANT '$ISO_VARIANT'. Use 'netinst' or 'offline'."
-        exit 1
-    fi
     local deps=(xorriso wget dd sed mkpasswd sha256sum cpio gzip)
     [ -n "$EXTRA_DEBS" ] && deps+=(xz)
     local missing=()
@@ -105,6 +118,14 @@ check_deps() {
     if [ "$LV_VAR_MIN" -gt "$LV_VAR_MAX" ]; then
         echo "[x] LV_VAR_MIN ($LV_VAR_MIN) is larger than LV_VAR_MAX ($LV_VAR_MAX)."
         exit 1
+    fi
+    if [ -n "$SERIAL_CONSOLE" ]; then
+        case "$SERIAL_CONSOLE" in
+            ttyS[0-3],"$SERIAL_SPEED"|ttyS[0-3],"$SERIAL_SPEED"n8) ;;
+            *)  echo "[x] SERIAL_CONSOLE must be ttyS0-3,<baud>[n8], e.g. ttyS1,115200n8."
+                echo "    got: '$SERIAL_CONSOLE'"
+                exit 1 ;;
+        esac
     fi
 }
 
@@ -245,6 +266,11 @@ patch_isolinux() {
         sed -i '/^timeout /d' "$icfg"
         sed -i 's|^include menu\.cfg$|include menu.cfg\ntimeout 1\nontimeout install|' "$icfg"
         echo "[*] Fixed boot timeout in isolinux.cfg"
+
+        if [ -n "$SERIAL_CONSOLE" ]; then
+            sed -i "1i serial $SERIAL_UNIT $SERIAL_SPEED" "$icfg"
+            echo "[*] isolinux output on ttyS$SERIAL_UNIT at $SERIAL_SPEED baud"
+        fi
     fi
 }
 
@@ -258,6 +284,12 @@ patch_grub() {
 
     sed -i '/^[[:space:]]*set timeout=/d; /^[[:space:]]*set timeout_style=/d; /^[[:space:]]*set default=/d' "$cfg"
     sed -i "1i set timeout=1\nset timeout_style=hidden\nset default='Install'" "$cfg"
+
+    if [ -n "$SERIAL_CONSOLE" ]; then
+        sed -i "1i serial --unit=$SERIAL_UNIT --speed=$SERIAL_SPEED\nterminal_input console serial\nterminal_output console serial" "$cfg"
+        sed -i 's|^\([[:space:]]*terminal_output[[:space:]]\+gfxterm\)$|\1 serial|' "$cfg"
+        echo "[*] grub output on ttyS$SERIAL_UNIT at $SERIAL_SPEED baud"
+    fi
     echo "[*] Patched: boot/grub/grub.cfg"
 }
 
@@ -280,7 +312,10 @@ render_preseed() {
                 APT_SERVICES:APT_SERVICES \
                 PKGSEL_UPGRADE:PKGSEL_UPGRADE \
                 UPDATE_POLICY:UPDATE_POLICY \
-                LATE_OFFLINE:LATE_OFFLINE; do
+                LATE_OFFLINE:LATE_OFFLINE \
+                SERIAL_ONLY:SERIAL_ONLY \
+                CONSOLE_ARGS:CONSOLE_ARGS \
+                LATE_SERIAL:LATE_SERIAL; do
         placeholder="${pair%%:*}"
         varname="${pair##*:}"
         value="${!varname}"
@@ -409,6 +444,9 @@ add_custom_files() {
        "$WORK_DIR/custom/"
     if [ "$ISO_VARIANT" = "offline" ]; then
         cp "$SCRIPT_DIR/custom/offline-post.sh" "$WORK_DIR/custom/"
+    fi
+    if [ -n "$SERIAL_CONSOLE" ]; then
+        cp "$SCRIPT_DIR/custom/serial-console.sh" "$WORK_DIR/custom/"
     fi
 
     if [ -n "$SSH_PUBKEY" ]; then
