@@ -268,9 +268,10 @@ installing them runs on tags and weekly, in QEMU.
   never binds, so nothing here exercises it.
 - **`single`'s ~45 GB minimum is computed** from the recipe's parts;
   `raid1`'s ~53 GB was measured, and only at 64 GB.
-- **Fixed swap sizes are never installed.** No swap and the 200% default go
-  through the install matrix; `SWAP_SIZE=4096` is covered by rendering
-  tests alone.
+- **Fixed swap sizes are installed once, by hand, and never measured.** No
+  swap and the 200% default go through the install matrix. `SWAP_SIZE=4096`
+  on `raid1` was installed once in QEMU; nothing read the swap size back,
+  and CI covers it by rendering tests alone.
 - **CI installs the offline image in one network case only.** The release
   workflow runs `raid1` offline with `SMOKE_NET=restricted`: DHCP answers,
   nothing routes out. A link without a DHCP server and a link that is down
