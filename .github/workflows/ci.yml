@@ -32,12 +32,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build tools
         run: sudo apt-get update && sudo apt-get install -y xorriso wget whois cpio xz-utils
+      - name: Name the source image
+        id: source
+        run: |
+          release=$(bash -c 'source ./build-iso.sh >/dev/null; echo "$DEBIAN_RELEASE"')
+          echo "release=$release" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
-          path: |
-            out/debian-*-amd64-netinst.iso
-            out/debian-*-amd64-DVD-1.iso
-          key: debian-sources-${{ hashFiles('Makefile', 'build-iso.sh') }}
+          path: out/debian-${{ steps.source.outputs.release }}-amd64-${{ matrix.variant == 'offline' && 'DVD-1' || 'netinst' }}.iso
+          key: debian-${{ steps.source.outputs.release }}-${{ matrix.variant || 'netinst' }}
       - name: Build and verify
         env:
           DISK_LAYOUT: ${{ matrix.layout }}

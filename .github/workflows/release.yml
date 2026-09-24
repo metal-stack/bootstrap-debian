@@ -44,10 +44,8 @@ jobs:
 
       - uses: actions/cache@v4
         with:
-          path: |
-            out/debian-${{ env.DEBIAN_RELEASE }}-amd64-netinst.iso
-            out/debian-${{ env.DEBIAN_RELEASE }}-amd64-DVD-1.iso
-          key: debian-sources-${{ hashFiles('Makefile', 'build-iso.sh') }}
+          path: out/debian-${{ env.DEBIAN_RELEASE }}-amd64-netinst.iso
+          key: debian-${{ env.DEBIAN_RELEASE }}-netinst
 
       - name: Build
         env:
