@@ -212,8 +212,9 @@ Losing a disk does not stop the boot. mdadm's initramfs script assembles
 what it can: it runs `mdadm --assemble --scan --no-degraded` first and
 retries with `--run` after two thirds of `ROOTDELAY`, which starts the array
 degraded (`usr/share/initramfs-tools/scripts/local-block/mdadm` in mdadm
-4.4-11, the version on this image). Read, not run: nothing here boots a
-raid1 machine with a disk missing.
+4.4-11, the version on this image). That is the case the smoke test reaches
+when it boots the installed system from the second disk alone, on BIOS and
+on UEFI, in a VM. Nothing here pulls a disk out of a running machine.
 
 ### `DISK_LAYOUT=single`
 
@@ -232,3 +233,35 @@ One GPT on the one disk, no arrays:
 The `bios_boot` partition is there in both layouts, so the same image boots a BIOS
 and a UEFI machine. `LV_VAR_MIN`/`LV_VAR_MAX` and the free space left in `vg0`
 behave exactly as above.
+
+## Known limits
+
+What the tests do not reach, and which figures are single data points.
+Unit tests and building and verifying every layout run on each push;
+installing them runs on tags and weekly, in QEMU.
+
+- **Only 13.x has been installed from.** The other rows of the release
+  table are codename lookups checked as strings; a preseed that installs 13
+  is no evidence for 14.
+- **QEMU only, never hardware.** `make smoke` and `make smoke-uefi` install
+  into a VM with 64 GB disks and 2 GB of RAM and wait for a login prompt.
+  Nothing here has run on a real machine, on another disk size, or with
+  more RAM than that.
+- **The 8 GB swap ceiling is read, not measured.** It follows from
+  `partman-auto/cap-ram` set to 4096, whose own template in partman-auto 177
+  caps the swap partition at 200% of that. With 2 GB of guest RAM the cap
+  never binds, so nothing here exercises it.
+- **`single`'s ~45 GB minimum is computed** from the recipe's parts;
+  `raid1`'s ~53 GB was measured, and only at 64 GB.
+- **Fixed swap sizes are never installed.** No swap and the 200% default go
+  through the install matrix; `SWAP_SIZE=4096` is covered by rendering
+  tests alone.
+- **The offline image is built and verified, not installed.** Its shipped
+  debs are checked against the image and their dependencies, but no test
+  boots it.
+- **`sync-esp.sh` leaves no message in the transcript.** The mirrored ESP
+  only shows up as a second disk that does or does not boot, which is what
+  the disk-2 boot checks; a mirror that fails has no message of its own.
+- **The layout assertions read partman's messages** (`RAID1 device#0`,
+  `Formatting swap space ...`). A point release that rewords them fails the
+  test for a reason that is not a regression.
