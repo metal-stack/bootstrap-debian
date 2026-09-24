@@ -97,7 +97,6 @@ d-i preseed/late_command string \
  in-target sh -c 'mkdir -p --mode=0700 /home/@USERNAME@/.ssh && cat /custom/authorized_keys > /home/@USERNAME@/.ssh/authorized_keys && chmod 0600 /home/@USERNAME@/.ssh/authorized_keys && chown -R 1000:1000 /home/@USERNAME@/.ssh'; \
  in-target sh -c 'sed -i "s/^#\?PermitRootLogin.*$/PermitRootLogin no/g" /etc/ssh/sshd_config'; \
  in-target sh -c 'sed -i "s/^#\?PasswordAuthentication.*$/PasswordAuthentication no/g" /etc/ssh/sshd_config'; \
- in-target sh -c 'rm -f /etc/ssh/ssh_host_*_key* && mkdir -p /usr/lib/systemd/system && cp /custom/ssh-host-keygen.service /usr/lib/systemd/system/ssh-host-keygen.service && systemctl enable ssh-host-keygen.service'; \
  in-target sh -c 'echo "IPv4: \\\4" >> /etc/issue && echo "IPv6: \\\6" >> /etc/issue && echo "" >> /etc/issue'; \
  in-target sh -c 'echo "@USERNAME@ ALL=(ALL:ALL) NOPASSWD: ALL" >> /etc/sudoers'; \
  in-target sh -c 'eject || true'; \

@@ -530,8 +530,7 @@ add_custom_files() {
     render_preseed
 
     mkdir -p "$WORK_DIR/custom"
-    cp "$SCRIPT_DIR/custom/ssh-host-keygen.service" \
-       "$SCRIPT_DIR/custom/disk-setup.sh" \
+    cp "$SCRIPT_DIR/custom/disk-setup.sh" \
        "$SCRIPT_DIR/custom/sync-esp.sh" \
        "$WORK_DIR/custom/"
     if [ "$ISO_VARIANT" = "offline" ]; then
