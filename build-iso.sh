@@ -85,8 +85,8 @@ case "$ISO_VARIANT" in
         LATE_OFFLINE=""
         ;;
     offline)
-        SRC_SUBDIR="iso-dvd"
-        SRC_NAME="debian-$DEBIAN_RELEASE-amd64-DVD-1.iso"
+        SRC_SUBDIR="iso-cd"
+        SRC_NAME="debian-$DEBIAN_RELEASE-amd64-netinst.iso"
         OUTPUT_NAME="debian-$DEBIAN_RELEASE-unattended-offline$LAYOUT_SUFFIX$SWAP_SUFFIX.iso"
         VOLUME_ID="Debian $DEBIAN_RELEASE $LAYOUT_NAME Offline"
         EXTRA_DEBS="unattended-upgrades"
@@ -509,7 +509,7 @@ fetch_extra_debs() {
             || { echo "[x] Checksum mismatch for $name."; exit 1; }
         downloaded=$((downloaded + 1))
     done
-    echo "[*] Shipping ${#resolved[@]} packages, $downloaded of them not on the DVD"
+    echo "[*] Shipping ${#resolved[@]} packages, $downloaded of them not on the source image"
 }
 
 patch_initrd() {

@@ -41,7 +41,7 @@ SCRIPTS    = $(wildcard *.sh tests/*.sh custom/*.sh)
 help:
 	@echo 'Targets:'
 	@echo '  iso            build the ISO (ISO_VARIANT=$(ISO_VARIANT), SERIAL_CONSOLE=$(SERIAL_CONSOLE))'
-	@echo '  offline        like iso, but ISO_VARIANT=offline (DVD-1, installs without network)'
+	@echo '  offline        like iso, but ISO_VARIANT=offline (installs without network)'
 	@echo '  single         like iso, but DISK_LAYOUT=single (one disk, LVM, no RAID)'
 	@echo '  verify         unpack the built ISO and check it (verify-iso.sh)'
 	@echo '  test           unit tests, no network and no root (tests/run-tests.sh)'

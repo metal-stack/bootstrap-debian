@@ -143,23 +143,28 @@ not rebuild an existing image just because a variable changed.
 
 ## Offline variant
 
-`ISO_VARIANT=offline ./build-iso.sh` builds the same installation from Debian's
-DVD-1 image instead of the netinst, so the target needs no network at all:
+`ISO_VARIANT=offline ./build-iso.sh` builds the same installation for a target
+without internet access:
 
 ```sh
 ISO_VARIANT=offline ./build-iso.sh
 sudo dd if=out/debian-13.6.0-unattended-offline.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
-Same preseed, same partitioning, same user, same SSH hardening. The build host
-still needs internet — it downloads a ~4 GB ISO — and the two variants have
-separate source and output names, so they do not collide in `out/`.
+It starts from the same netinst image as the default build. Everything the
+installation pulls in (openssh-server, python3, mdadm, lvm2, the kernel, grub
+and shim) is already in the netinst pool, so the offline image differs only in
+its preseed and in the debs it carries for `unattended-upgrades`, which is on
+neither the netinst nor DVD-1. The build host still needs internet for those
+debs and the package index. Output names differ, so both variants coexist in
+`out/`.
 
-Ten preseed keys differ, and `tests/run-tests.sh` fails if an eleventh appears:
+Eleven preseed keys differ, and `tests/run-tests.sh` fails if a twelfth appears:
 
 | Key                          | netinst               | offline                            |
 | ---------------------------- | --------------------- | ---------------------------------- |
 | `apt-setup/use_mirror`       | (unset, mirror used)  | `false`                            |
+| `apt-setup/no_mirror`        | (unset)               | `true`, continue without a mirror  |
 | `apt-setup/services-select`  | `security, updates`   | empty                              |
 | `pkgsel/upgrade`             | `full-upgrade`        | `none`                             |
 | `pkgsel/update-policy`       | `unattended-upgrades` | `none`, see below                  |
@@ -172,8 +177,17 @@ Ten preseed keys differ, and `tests/run-tests.sh` fails if an eleventh appears:
 
 DHCP is still attempted, and still configures the installed system when a server
 answers. The `netcfg` keys only remove the prompts when the network is
-incomplete, so one ISO covers "LAN without egress", "LAN without DNS" and "no
-network at all".
+incomplete. One image covers a LAN without egress, a link without a DHCP
+server, and a network card whose cable is unplugged.
+
+It does **not** cover a machine where the installer finds no network card at
+all, for example because the driver is missing. d-i then stops at
+`netcfg/no_interfaces`, and no preseed can answer that: the question is of type
+`error`, and cdebconf 0.280 always shows error questions, before it looks at
+priority or at a preseeded value (`question_db_is_visible` in
+[cdebconf 0.280 `src/database.c`](https://sources.debian.org/src/cdebconf/0.280/src/database.c/#L349)).
+The install waits at that dialog; whether it finishes after someone answers
+it at the console has not been tried.
 
 ## Target requirements
 
@@ -256,9 +270,14 @@ installing them runs on tags and weekly, in QEMU.
 - **Fixed swap sizes are never installed.** No swap and the 200% default go
   through the install matrix; `SWAP_SIZE=4096` is covered by rendering
   tests alone.
-- **The offline image is built and verified, not installed.** Its shipped
-  debs are checked against the image and their dependencies, but no test
-  boots it.
+- **The offline image is installed by hand, not in CI.** `make smoke` gives
+  the guest a working network, so it cannot show an offline install. The
+  offline images were installed in QEMU with modified copies of
+  `boot-smoke.sh` for three cases: no egress, no DHCP server, and the link
+  set down. That was a one-off run, and no workflow repeats it.
+- **Whether `offline-post.sh` installs `unattended-upgrades` is not
+  observed.** The script writes nothing the transcript shows; only the
+  install finishing is.
 - **`sync-esp.sh` leaves no message in the transcript.** The mirrored ESP
   only shows up as a second disk that does or does not boot, which is what
   the disk-2 boot checks; a mirror that fails has no message of its own.

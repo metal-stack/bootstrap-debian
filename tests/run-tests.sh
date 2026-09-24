@@ -102,7 +102,7 @@ test_config_validation() {
 test_iso_variants() {
     local pair variant want url
     for pair in netinst:iso-cd/debian-13.6.0-amd64-netinst.iso \
-                offline:iso-dvd/debian-13.6.0-amd64-DVD-1.iso; do
+                offline:iso-cd/debian-13.6.0-amd64-netinst.iso; do
         variant="${pair%%:*}"; want="${pair#*:}"
         url=$(ISO_VARIANT="$variant" run 'echo "${DEBIAN_ISO_URLS[0]}"')
         equals "$variant downloads $want" "$want" "${url#*/amd64/}"
@@ -211,6 +211,7 @@ test_preseed_rendering() {
 
 test_offline_variant() {
     cat > "$TMP/expected-keys" <<'KEYS'
+d-i apt-setup/no_mirror
 d-i apt-setup/services-select
 d-i apt-setup/use_mirror
 d-i netcfg/confirm_static

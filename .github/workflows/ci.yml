@@ -38,8 +38,8 @@ jobs:
           echo "release=$release" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
-          path: out/debian-${{ steps.source.outputs.release }}-amd64-${{ matrix.variant == 'offline' && 'DVD-1' || 'netinst' }}.iso
-          key: debian-${{ steps.source.outputs.release }}-${{ matrix.variant || 'netinst' }}
+          path: out/debian-${{ steps.source.outputs.release }}-amd64-netinst.iso
+          key: debian-${{ steps.source.outputs.release }}-netinst
       - name: Build and verify
         env:
           DISK_LAYOUT: ${{ matrix.layout }}

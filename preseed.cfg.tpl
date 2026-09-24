@@ -72,6 +72,7 @@ d-i apt-setup/services-select multiselect @APT_SERVICES@
 d-i apt-setup/security_host string security.debian.org
 d-i apt-setup/cdrom/set-first boolean false
 @OFFLINE_ONLY@d-i apt-setup/use_mirror boolean false
+@OFFLINE_ONLY@d-i apt-setup/no_mirror boolean true
 
 ### Package selection
 tasksel tasksel/first multiselect none
