@@ -149,6 +149,7 @@ without internet access:
 ```sh
 ISO_VARIANT=offline ./build-iso.sh
 sudo dd if=out/debian-13.6.0-unattended-offline.iso of=/dev/sdX bs=4M status=progress conv=fsync
+make smoke ISO_VARIANT=offline SMOKE_NET=restricted   # install it where DHCP answers but nothing routes out
 ```
 
 It starts from the same netinst image as the default build. Everything the
@@ -270,11 +271,11 @@ installing them runs on tags and weekly, in QEMU.
 - **Fixed swap sizes are never installed.** No swap and the 200% default go
   through the install matrix; `SWAP_SIZE=4096` is covered by rendering
   tests alone.
-- **The offline image is installed by hand, not in CI.** `make smoke` gives
-  the guest a working network, so it cannot show an offline install. The
-  offline images were installed in QEMU with modified copies of
-  `boot-smoke.sh` for three cases: no egress, no DHCP server, and the link
-  set down. That was a one-off run, and no workflow repeats it.
+- **CI installs the offline image in one network case only.** The release
+  workflow runs `raid1` offline with `SMOKE_NET=restricted`: DHCP answers,
+  nothing routes out. A link without a DHCP server and a link that is down
+  were installed once by hand, in QEMU, with modified copies of
+  `boot-smoke.sh`; no workflow repeats them.
 - **Whether `offline-post.sh` installs `unattended-upgrades` is not
   observed.** The script writes nothing the transcript shows; only the
   install finishing is.

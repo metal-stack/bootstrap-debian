@@ -615,6 +615,19 @@ test_smoke_prompt_detection() {
     done
 }
 
+test_smoke_network() {
+    equals "smoke: the guest gets a user network by default" \
+        "-netdev user,id=n0 -device virtio-net-pci,netdev=n0" \
+        "$(smoke 'net_args; echo "${NET_ARGS[*]}"')"
+    equals "smoke: SMOKE_NET=restricted keeps DHCP but cuts egress" \
+        "-netdev user,id=n0,restrict=on -device virtio-net-pci,netdev=n0" \
+        "$(SMOKE_NET=restricted smoke 'net_args; echo "${NET_ARGS[*]}"')"
+    case "$(SMOKE_NET=wifi smoke 'net_args')" in
+        *"SMOKE_NET must be"*) pass "smoke: an unknown SMOKE_NET aborts" ;;
+        *) fail "smoke: an unknown SMOKE_NET aborts" "no abort message" ;;
+    esac
+}
+
 test_smoke_disk_count() {
     equals "smoke: two disks by default" \
         "-drive file=/w/d1.qcow2,if=virtio,format=qcow2 -drive file=/w/d2.qcow2,if=virtio,format=qcow2" \
@@ -657,6 +670,7 @@ main() {
     test_smoke_serial_wiring
     test_smoke_stage_order
     test_smoke_prompt_detection
+    test_smoke_network
     test_smoke_disk_count
 
     echo

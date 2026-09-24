@@ -8,6 +8,7 @@ DISK_SIZE="${SMOKE_DISK_SIZE:-64G}"
 SMOKE_DISKS="${SMOKE_DISKS:-2}"
 BOOT_DEADLINE="${SMOKE_BOOT_DEADLINE:-420}"
 LOGIN_PROMPT="${SMOKE_LOGIN_PROMPT:-login:}"
+SMOKE_NET="${SMOKE_NET:-user}"
 
 ISO=""
 MODE=""
@@ -22,6 +23,7 @@ QEMU=""
 FW=()
 SERIAL_ARGS=()
 DISK_ARGS=()
+NET_ARGS=()
 SERIAL_UNIT=""
 ISO_LAYOUT=""
 ISO_SWAP=""
@@ -137,6 +139,14 @@ disk_args() {
     done
 }
 
+net_args() {
+    case "$SMOKE_NET" in
+        user)       NET_ARGS=(-netdev "user,id=n0" -device "virtio-net-pci,netdev=n0") ;;
+        restricted) NET_ARGS=(-netdev "user,id=n0,restrict=on" -device "virtio-net-pci,netdev=n0") ;;
+        *) die "SMOKE_NET must be user or restricted (DHCP answers, no egress), got '$SMOKE_NET'" ;;
+    esac
+}
+
 disk_args_only() {
     DISK_ARGS=(-drive "file=$WORK/d$1.qcow2,if=virtio,format=qcow2")
 }
@@ -148,7 +158,7 @@ start_qemu() {
     MARK=1
     qemu-system-x86_64 -accel "$ACCEL" -m 2048 -smp 2 "${FW[@]}" "${boot[@]}" \
         "${DISK_ARGS[@]}" \
-        -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+        "${NET_ARGS[@]}" \
         -display none "${SERIAL_ARGS[@]}" -no-reboot 2>"$WORK/qemu.err" &
     QEMU=$!
 }
@@ -343,10 +353,11 @@ main() {
     require_disk_count
     serial_args
     firmware_args
+    net_args
     disk_args
     create_disks
 
-    echo "[$MODE] ${ISO##*/} on $SMOKE_DISKS disk(s) of $DISK_SIZE ($ACCEL, $ISO_LAYOUT swap=$ISO_SWAP, install deadline ${DEADLINE}s)"
+    echo "[$MODE] ${ISO##*/} on $SMOKE_DISKS disk(s) of $DISK_SIZE ($ACCEL, $ISO_LAYOUT swap=$ISO_SWAP, network $SMOKE_NET, install deadline ${DEADLINE}s)"
     if run_install; then
         [ -n "${SMOKE_LOG:-}" ] && cp "$LOG" "$SMOKE_LOG.install" && cp "$INSTALL_SEEN" "$SMOKE_LOG.install.text"
         run_installed_system

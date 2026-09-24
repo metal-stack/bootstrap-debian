@@ -25,9 +25,16 @@ jobs:
       matrix:
         layout: [raid1, single]
         swap: ['', 0]
+        variant: [netinst]
+        include:
+          - layout: raid1
+            swap: ''
+            variant: offline
     env:
       DISK_LAYOUT: ${{ matrix.layout }}
       SWAP_SIZE: ${{ matrix.swap }}
+      ISO_VARIANT: ${{ matrix.variant }}
+      SMOKE_NET: ${{ matrix.variant == 'offline' && 'restricted' || 'user' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +67,7 @@ jobs:
       - name: Install QEMU for the boot test
         run: sudo apt-get install -y qemu-system-x86 qemu-utils ovmf
 
-      - name: Boot smoke test (${{ matrix.layout }}, SWAP_SIZE=${{ matrix.swap || 'default' }})
+      - name: Boot smoke test (${{ matrix.variant }}, ${{ matrix.layout }}, SWAP_SIZE=${{ matrix.swap || 'default' }})
         run: |
           ls -l /dev/kvm || echo "::warning::no /dev/kvm on this runner, QEMU falls back to TCG"
           make smoke

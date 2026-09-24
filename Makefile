@@ -27,8 +27,9 @@ export AUTHORIZED_KEYS_FILE USERHASH
 SMOKE_DEADLINE      ?= 1800
 SMOKE_BOOT_DEADLINE ?= 420
 SMOKE_DISKS         ?= $(if $(filter single,$(DISK_LAYOUT)),1,2)
+SMOKE_NET           ?= user
 SHELLCHECK_OPTS ?= -e SC2086,SC2016,SC2015
-export SHELLCHECK_OPTS SMOKE_BOOT_DEADLINE SMOKE_DISKS
+export SHELLCHECK_OPTS SMOKE_BOOT_DEADLINE SMOKE_DISKS SMOKE_NET
 
 ISO_SUFFIX = $(if $(filter offline,$(ISO_VARIANT)),-offline,)$(if $(filter single,$(DISK_LAYOUT)),-single,)$(if $(filter 0,$(SWAP_SIZE)),-noswap,)
 ISO_PATH  ?= out/debian-$(DEBIAN_RELEASE)-unattended$(ISO_SUFFIX).iso
@@ -67,6 +68,7 @@ help:
 	@echo '  SSH_PUBKEY, AUTHORIZED_KEYS_FILE, USERHASH: empty means interactive or the build-iso.sh default'
 	@echo '  ISO_PATH=$(ISO_PATH)'
 	@echo '  SMOKE_DEADLINE=$(SMOKE_DEADLINE) (install)   SMOKE_BOOT_DEADLINE=$(SMOKE_BOOT_DEADLINE) (per stage)   SMOKE_DISKS=$(SMOKE_DISKS)'
+	@echo '  SMOKE_NET=$(SMOKE_NET) (user: full network, restricted: DHCP answers, no egress)'
 	@echo
 	@echo 'Examples:'
 	@echo '  make iso SSH_PUBKEY="ssh-ed25519 AAAA... admin@host"'
@@ -75,6 +77,7 @@ help:
 	@echo '  make iso ISO_VARIANT=offline TARGET_HOSTNAME=node01 LV_VAR_MAX=400000'
 	@echo '  make single                              one-disk machine, no RAID'
 	@echo '  make smoke DISK_LAYOUT=single            install it on a one-disk VM'
+	@echo '  make smoke ISO_VARIANT=offline SMOKE_NET=restricted   install offline, no egress'
 	@echo '  make iso DISK_LAYOUT=single SWAP_SIZE=0  k8s node: one disk, no swap'
 	@echo '  make iso SWAP_SIZE=4096                  fixed 4 GB swap'
 	@echo '  make smoke ISO_PATH=out/debian-$(DEBIAN_RELEASE)-unattended.iso'
