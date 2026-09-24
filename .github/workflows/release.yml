@@ -62,14 +62,6 @@ jobs:
       - name: Install QEMU for the boot test
         run: sudo apt-get install -y qemu-system-x86 qemu-utils ovmf
 
-      - name: Build an ISO with a serial console
-        env:
-          USERHASH: '$6$ci$3xT0lTBnPzMHK'
-          SSH_PUBKEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGciTest ci@example'
-          CHECK_SIGNATURE: 'yes'
-          SERIAL_CONSOLE: 'ttyS0,115200n8'
-        run: ./build-iso.sh
-
       - name: Boot smoke test (${{ matrix.layout }}, SWAP_SIZE=${{ matrix.swap || 'default' }})
         run: |
           ls -l /dev/kvm || echo "::warning::no /dev/kvm on this runner, QEMU falls back to TCG"
