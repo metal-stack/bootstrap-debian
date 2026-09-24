@@ -20,6 +20,7 @@ jobs:
       matrix:
         layout: [raid1, single]
         swap: ['', 0]
+        variant: [netinst]
         include:
           - layout: raid1
             swap: ''
@@ -44,5 +45,5 @@ jobs:
         env:
           DISK_LAYOUT: ${{ matrix.layout }}
           SWAP_SIZE: ${{ matrix.swap }}
-          ISO_VARIANT: ${{ matrix.variant || 'netinst' }}
+          ISO_VARIANT: ${{ matrix.variant }}
         run: make verify
