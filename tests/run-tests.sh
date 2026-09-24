@@ -301,6 +301,31 @@ disk_parent() {
     SYS_BLOCK_DIR="$1" sh -c '. "$1"; parent_disk "$2"' _ "$REPO/custom/disk-setup.sh" "$2"
 }
 
+raid_recipe_stanzas() {
+    awk '
+        /^d-i partman-auto\/expert_recipe string/ { inside = 1 }
+        inside { line = $0; sub(/\\$/, "", line); buf = buf line " " }
+        END {
+            n = split(buf, tok, " ")
+            stanza = 1
+            for (i = 1; i <= n; i++) {
+                if (tok[i] == ".") { if (raid) printf "%d ", stanza; raid = 0; stanza++; continue }
+                if (tok[i] == "method{" && tok[i+1] == "raid") raid = 1
+            }
+            if (raid) printf "%d ", stanza
+        }' "$1"
+}
+
+test_disk_setup_partition_numbers() {
+    local want got
+    want=$(raid_recipe_stanzas "$TMP/preseed.netinst")
+    equals "the raid1 recipe puts its arrays at partitions 3, 4 and 5" "3 4 5 " "$want"
+    got=$(disk_setup "/dev/vda /dev/vdb" raid1 yes \
+        | grep 'partman-auto-raid/recipe' | grep -oE '/dev/vda[0-9]+' \
+        | sed 's|/dev/vda||' | sort -un | tr '\n' ' ')
+    equals "disk-setup hands partman the partitions the raid1 recipe builds" "$want" "$got"
+}
+
 test_disk_parent() {
     local sys="$TMP/sys"
     mkdir -p "$sys/sda" "$sys/nvme0n1" "$sys/mmcblk0"
@@ -578,6 +603,7 @@ main() {
     test_offline_variant
     test_disk_layout
     test_disk_parent
+    test_disk_setup_partition_numbers
     test_disk_setup
     test_layout_image_names
     test_swap
