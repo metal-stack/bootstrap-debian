@@ -82,15 +82,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - env:
+      - name: Publish the release with the notes from the annotated tag
+        env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --generate-notes \
-            --notes "Tested against Debian ${DEBIAN_RELEASE}.
-
-          \`\`\`sh
-          git checkout ${GITHUB_REF_NAME}
-          echo \"ssh-ed25519 AAAA... user@host\" > custom/authorized_keys
-          ./build-iso.sh
-          \`\`\`"
+          git fetch --force origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          [ "$(git cat-file -t "${GITHUB_REF_NAME}")" = tag ] || {
+            echo "::error::${GITHUB_REF_NAME} is not an annotated tag; recreate it with: git tag -a --cleanup=verbatim -F <notes.md> <tag>"
+            exit 1
+          }
+          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > notes.md
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file notes.md
