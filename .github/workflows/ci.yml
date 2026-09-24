@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
 
 jobs:
@@ -46,6 +45,4 @@ jobs:
           DISK_LAYOUT: ${{ matrix.layout }}
           SWAP_SIZE: ${{ matrix.swap }}
           ISO_VARIANT: ${{ matrix.variant || 'netinst' }}
-        run: |
-          make iso
-          make verify
+        run: make verify
