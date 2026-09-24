@@ -41,7 +41,6 @@ d-i clock-setup/utc boolean true
 d-i time/zone string @TIMEZONE@
 d-i clock-setup/ntp boolean true
 
-d-i partman-auto/method string raid
 d-i partman-partitioning/default_label string gpt
 d-i partman-lvm/device_remove_lvm boolean true
 d-i partman-lvm/confirm boolean true
@@ -54,56 +53,12 @@ d-i partman/choose_partition select finish
 d-i partman/confirm boolean true
 d-i partman/confirm_nooverwrite boolean true
 d-i partman-basicmethods/method_only boolean false
-d-i partman-auto/choose_recipe select multiraid
+d-i partman-basicfilesystems/no_swap boolean false
 d-i partman-auto-lvm/new_vg_name string vg0
 d-i partman-auto-lvm/guided_size string 99%
 d-i partman-auto/cap-ram string 4096
 
-d-i partman-auto/expert_recipe string         \
- multiraid ::                                 \
-   1 1 1 free                                 \
-     $lvmignore{ }                            \
-     $bios_boot{ }                            \
-     method{ biosgrub }                       \
-   .                                          \
-   512 512 512 fat32                          \
-     $lvmignore{ }                            \
-     $primary{ }                              \
-     $iflabel{ gpt }                          \
-     method{ efi } format{ }                  \
-   .                                          \
-   1024 1024 1024 raid                        \
-     $lvmignore{ }                            \
-     $primary{ }                              \
-     $bootable{ }                             \
-     method{ raid }                           \
-   .                                          \
-   10240 102400000 1000000000 raid            \
-     $lvmignore{ }                            \
-     $primary{ }                              \
-     method{ raid }                           \
-   .                                          \
-   2048 102400000 200% raid                   \
-     $lvmignore{ }                            \
-     $primary{ }                              \
-     method{ raid }                           \
-   .                                          \
-   30720 30720 30720 ext4                     \
-     $defaultignore{ }                        \
-     $lvmok{ }                                \
-     lv_name{ lv_root }                       \
-     method{ format } format{ }               \
-     use_filesystem{ } filesystem{ ext4 }     \
-     mountpoint{ / }                          \
-   .                                          \
-   @LV_VAR_MIN@ @LV_VAR_MAX@ @LV_VAR_MAX@ ext4 \
-     $defaultignore{ }                        \
-     $lvmok{ }                                \
-     lv_name{ lv_var }                        \
-     method{ format } format{ }               \
-     use_filesystem{ } filesystem{ ext4 }     \
-     mountpoint{ /var }                       \
-   .
+@PARTMAN_RECIPE@
 
 ### Base system installation
 d-i base-installer/install-recommends boolean true
@@ -120,16 +75,12 @@ d-i apt-setup/cdrom/set-first boolean false
 
 ### Package selection
 tasksel tasksel/first multiselect none
-d-i pkgsel/include string openssh-server python3 mdadm
+d-i pkgsel/include string @PKGSEL_INCLUDE@
 d-i pkgsel/upgrade select @PKGSEL_UPGRADE@
 d-i pkgsel/update-policy select @UPDATE_POLICY@
 
 ### Disk detection
-d-i partman/early_command string sh /cdrom/custom/raid-setup.sh
-
-### RAID
-# without this a failed disk drops every later boot into an initramfs prompt
-d-i mdadm/boot_degraded boolean true
+d-i partman/early_command string sh /cdrom/custom/disk-setup.sh @DISK_LAYOUT@ @HAS_SWAP@
 
 @SERIAL_ONLY@d-i debian-installer/add-kernel-opts string @CONSOLE_ARGS@
 

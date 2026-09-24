@@ -1,6 +1,10 @@
 # Bootstrap Debian
 
-Debian netinst ISO with an embedded preseed. Boots, wipes two disks, installs onto RAID1 with LVM, powers off. No interaction.
+Debian netinst ISO with an embedded preseed. Boots, wipes the disks, installs onto LVM, powers off. No interaction.
+
+Two disks mirrored with RAID1 is the default; a one-disk machine needs `DISK_LAYOUT=single`.
+Swap is 200% of RAM up to 8 GB unless `SWAP_SIZE` says otherwise; `SWAP_SIZE=0` means none.
+Tested in QEMU only, not on hardware, and `single` has no redundancy; see [Known limits](#known-limits).
 
 ```sh
 sudo apt-get install -y xorriso wget whois gnupg cpio xz-utils
@@ -9,6 +13,7 @@ echo "ssh-ed25519 AAAA... user@host" > custom/authorized_keys
 sudo dd if=out/debian-13.6.0-unattended.iso of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
+For a machine with one disk, see [Disk layout](#disk-layout); for swap, [Swap](#swap).
 For a target without internet access, see [Offline variant](#offline-variant).
 
 Settings are the variables at the top of `build-iso.sh`, all overridable via environment. `USERHASH="$(mkpasswd -m sha-512)"` skips the password prompt; the hash lands only in the ISO.
@@ -60,6 +65,82 @@ So a point release is `DEBIAN_RELEASE=13.7.0 ./build-iso.sh`, and a major releas
 
 Only the 13 row has been installed from. The bullseye/bookworm/forky rows are lookups that were checked as strings, not exercised against a real ISO — and a preseed that works on 13 is not guaranteed to work on another major.
 
+## Disk layout
+
+`DISK_LAYOUT` picks how the disks are carved up. It is independent of
+`ISO_VARIANT`, so all four combinations build, each under its own name.
+
+| `DISK_LAYOUT`     | Disks needed | Image                                 |
+| ----------------- | ------------ | ------------------------------------- |
+| `raid1` (default) | two          | `debian-13.6.0-unattended.iso`        |
+| `single`          | one or more  | `debian-13.6.0-unattended-single.iso` |
+
+```sh
+make single                     # or: DISK_LAYOUT=single ./build-iso.sh
+make smoke DISK_LAYOUT=single   # installs it on a one-disk VM
+```
+
+**`raid1`** takes the two largest disks and mirrors them: three RAID1 arrays,
+`vg0` on the second, as in [Resulting layout](#resulting-layout). Fewer than two
+disks **aborts the install** rather than silently installing onto one, and the
+message says to rebuild with `DISK_LAYOUT=single`.
+
+**`single`** installs onto the largest disk alone. No arrays and no `mdadm`: the
+ESP and `/boot` are plain partitions, the rest of the disk is one LVM physical
+volume carrying `vg0`, and swap is a logical volume instead of an array. A second
+disk, if present, is **left untouched**: not wiped, not added to `vg0`.
+
+Everything else is shared: same user, same SSH hardening, same `/var` caps, same
+serial console. Apart from the recipe body, five preseed keys differ between the
+layouts, and `tests/run-tests.sh` fails if a sixth appears.
+
+The two layouts reach partman by different routes, which is where the recipe
+tokens matter. `raid1` is decoded as `partman-auto/method raid`, so its physical
+partitions carry `$lvmignore{ }`. `single` is decoded as `method lvm`, where every
+stanza carrying `lvmignore` is **dropped** (`decode_recipe` in
+[partman-auto 177 `lib/recipes.sh`](https://sources.debian.org/src/partman-auto/177/lib/recipes.sh/#L156),
+the trixie version), so the single recipe must not carry that token at all, or the
+ESP and `/boot` silently disappear. `tests/run-tests.sh`
+asserts both, and that `/boot` is never a logical volume.
+
+## Swap
+
+`SWAP_SIZE`, in MB, sizes swap in either layout: the third array in `raid1`,
+`vg0/lv_swap` in `single`. partman counts a MB as 10^6 bytes, so `SWAP_SIZE=1024`
+is 976 MiB (244 extents of 4 MiB, read back off an installed disk).
+
+| `SWAP_SIZE`     | Swap                                          | Image name        |
+| --------------- | --------------------------------------------- | ----------------- |
+| empty (default) | 200% of RAM, at most 8 GB, as before          | unchanged         |
+| `4096`          | fixed 4096 MB                                 | unchanged         |
+| `0`             | none: no swap array, no swap LV               | `...-noswap.iso`  |
+
+```sh
+make iso SWAP_SIZE=4096                  # fixed 4 GB
+make iso DISK_LAYOUT=single SWAP_SIZE=0  # one disk, no swap
+```
+
+The default differs in one detail between the layouts. `raid1` keeps its old
+stanza, `2048 102400000 200%`: at least 2 GB, growing to 200% of RAM. `single` uses
+`200% 200% 200%`, exactly 200% of RAM, because there swap is a logical volume that
+competes with `lv_var` for `vg0`. partman's `expand_scheme` weights each volume by
+`(priority - min) * 100 / sum` in integer arithmetic, so with raid1's stanza the
+weight of `lv_var` would round to 0 and `/var` would never grow past its minimum.
+The two defaults only give different sizes below 1 GB of RAM.
+
+By default a kubelet
+[will not start](https://kubernetes.io/docs/concepts/cluster-administration/swap-memory-management/)
+on a Linux node that has swap enabled, unless `failSwapOn: false` is set; with the
+default `NoSwap` behaviour pods then still use no swap. `SWAP_SIZE=0` removes the
+need to set it, for example under kubeadm. k3s already sets `FailSwapOn` to `false`
+in its default kubelet configuration (`defaultKubeletConfig` in
+[`pkg/daemons/agent/agent.go`](https://github.com/k3s-io/k3s/blob/master/pkg/daemons/agent/agent.go),
+read on `master`), so there swap does not stop the kubelet.
+
+A fixed size does not rename the image, just as `LV_VAR_MAX` does not, so a
+`SWAP_SIZE=4096` build overwrites the default one in `out/`, and `make iso` does
+not rebuild an existing image just because a variable changed.
+
 ## Offline variant
 
 `ISO_VARIANT=offline ./build-iso.sh` builds the same installation from Debian's
@@ -96,13 +177,20 @@ network at all".
 
 ## Target requirements
 
-- **Exactly two disks, both wiped without confirmation.** `raid-setup.sh` takes the two largest that are not the install medium — a smaller third disk is left alone. Equal sizes are ordered by device name, so the pair stays the same across boots. Fewer than two aborts the install rather than falling back to one disk.
-- **~53 GB per disk minimum** (tested on 64 GB): 512 MB ESP + 1 GB `/boot` + up to 8 GB swap + 30 GB `lv_root` + 10 GB minimum `lv_var`, and only 99% of the VG is offered to the recipe. Below that partman cannot satisfy the recipe.
+- **Disks are wiped without confirmation.** `disk-setup.sh` ranks the disks that are not the install medium by size; equal sizes are ordered by device name, so the choice stays the same across boots.
+  - `DISK_LAYOUT=raid1` takes **the two largest** (a smaller third disk is left alone) and aborts if it finds fewer than two.
+  - `DISK_LAYOUT=single` takes **the largest one only** and leaves every other disk untouched.
+- **Minimum disk size**, below which partman cannot satisfy the recipe (tested on 64 GB only):
+  - `raid1`: **~53 GB per disk**: 512 MB ESP + 1 GB `/boot` + up to 8 GB swap + 30 GB `lv_root` + 10 GB minimum `lv_var`.
+  - `single`: **~45 GB** for the same parts on one disk, computed rather than measured.
+  - A different `SWAP_SIZE` moves both figures by the difference to 8 GB. Only 99% of the VG is offered to the recipe in either case.
 - DHCP with internet access — netinst pulls from `deb.debian.org`. The
   [offline variant](#offline-variant) drops this requirement.
 - BIOS or UEFI; the installed system follows the mode the ISO was booted in. Any existing ESP is reformatted.
 
 ## Resulting layout
+
+### `DISK_LAYOUT=raid1`
 
 Identical GPT on both disks: `bios_boot` (1 MB), ESP (512 MB), then three RAID1 arrays.
 
@@ -110,7 +198,7 @@ Identical GPT on both disks: `bios_boot` (1 MB), ESP (512 MB), then three RAID1 
 | --------------- | ------------------------ | ---------------- | --------------- |
 | `md0`         | partition 3 of each disk | 1 GB             | `/boot`, ext4 |
 | `md1`         | partition 4 of each disk | rest of the disk | PV of VG`vg0` |
-| `md2`         | partition 5 of each disk | 200% of RAM      | swap            |
+| `md2`         | partition 5 of each disk | `SWAP_SIZE`, default 200% of RAM | swap, absent with `SWAP_SIZE=0` |
 | `vg0/lv_root` | —                       | 30 GB            | `/`, ext4     |
 | `vg0/lv_var`  | —                       | 10 GB–200 GB    | `/var`, ext4  |
 
@@ -119,3 +207,21 @@ Identical GPT on both disks: `bios_boot` (1 MB), ESP (512 MB), then three RAID1 
 ```sh
 LV_VAR_MAX=51200 ./build-iso.sh    # /var stops at 50 GB
 ```
+
+### `DISK_LAYOUT=single`
+
+One GPT on the one disk, no arrays:
+
+| Device          | Size                             | Mount                           |
+| --------------- | -------------------------------- | ------------------------------- |
+| partition 1     | 1 MB                             | `bios_boot`                     |
+| partition 2     | 512 MB                           | `/boot/efi`                     |
+| partition 3     | 1 GB                             | `/boot`, ext4                   |
+| partition 4     | rest of the disk                 | PV of VG `vg0`                  |
+| `vg0/lv_root`   | 30 GB                            | `/`, ext4                       |
+| `vg0/lv_swap`   | `SWAP_SIZE`, default 200% of RAM | swap, absent with `SWAP_SIZE=0` |
+| `vg0/lv_var`    | 10 GB-200 GB                     | `/var`, ext4                    |
+
+The `bios_boot` partition is there in both layouts, so the same image boots a BIOS
+and a UEFI machine. `LV_VAR_MIN`/`LV_VAR_MAX` and the free space left in `vg0`
+behave exactly as above.

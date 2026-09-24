@@ -17,6 +17,8 @@ LV_VAR_MAX="${LV_VAR_MAX:-200000}"
 AUTHORIZED_KEYS_FILE="${AUTHORIZED_KEYS_FILE:-$SCRIPT_DIR/custom/authorized_keys}"
 SSH_PUBKEY="${SSH_PUBKEY:-}"
 SERIAL_CONSOLE="${SERIAL_CONSOLE-ttyS1,115200n8}"
+DISK_LAYOUT="${DISK_LAYOUT:-raid1}"
+SWAP_SIZE="${SWAP_SIZE-}"
 
 case "$DEBIAN_MAJOR" in
     11) DEFAULT_SUITE="bullseye" ;;
@@ -27,14 +29,54 @@ case "$DEBIAN_MAJOR" in
 esac
 DEBIAN_SUITE="${DEBIAN_SUITE:-$DEFAULT_SUITE}"
 
+# shellcheck disable=SC2034
+case "$DISK_LAYOUT" in
+    raid1)
+        LAYOUT_NAME="Unattended"
+        LAYOUT_SUFFIX=""
+        PKGSEL_INCLUDE="openssh-server python3 mdadm"
+        DEFAULT_SWAP_MIN=2048
+        DEFAULT_SWAP_PRIO=102400000
+        ;;
+    single)
+        LAYOUT_NAME="Single"
+        LAYOUT_SUFFIX="-single"
+        PKGSEL_INCLUDE="openssh-server python3"
+        DEFAULT_SWAP_MIN="200%"
+        DEFAULT_SWAP_PRIO="200%"
+        ;;
+    *)  echo "[x] Unknown DISK_LAYOUT '$DISK_LAYOUT'. Use 'raid1' or 'single'."
+        exit 1 ;;
+esac
+PARTMAN_TPL="${PARTMAN_TPL:-$SCRIPT_DIR/partman/$DISK_LAYOUT.tpl}"
+SWAP_TPL="$SCRIPT_DIR/partman/swap-$DISK_LAYOUT.tpl"
+HAS_SWAP="yes"
+SWAP_SUFFIX=""
+SWAP_MIN="$DEFAULT_SWAP_MIN"
+SWAP_PRIO="$DEFAULT_SWAP_PRIO"
+SWAP_MAX="200%"
+# shellcheck disable=SC2034
+case "$SWAP_SIZE" in
+    ''|*[!0-9]*) ;;
+    *)  if [ "$SWAP_SIZE" -eq 0 ]; then
+            SWAP_TPL=/dev/null
+            HAS_SWAP="no"
+            SWAP_SUFFIX="-noswap"
+        else
+            SWAP_MIN="$SWAP_SIZE"
+            SWAP_PRIO="$SWAP_SIZE"
+            SWAP_MAX="$SWAP_SIZE"
+        fi ;;
+esac
+
 ISO_VARIANT="${ISO_VARIANT:-netinst}"
 # shellcheck disable=SC2034
 case "$ISO_VARIANT" in
     netinst)
         SRC_SUBDIR="iso-cd"
         SRC_NAME="debian-$DEBIAN_RELEASE-amd64-netinst.iso"
-        OUTPUT_NAME="debian-$DEBIAN_RELEASE-unattended.iso"
-        VOLUME_ID="Debian $DEBIAN_RELEASE Unattended"
+        OUTPUT_NAME="debian-$DEBIAN_RELEASE-unattended$LAYOUT_SUFFIX$SWAP_SUFFIX.iso"
+        VOLUME_ID="Debian $DEBIAN_RELEASE $LAYOUT_NAME"
         EXTRA_DEBS=""
         OFFLINE_ONLY="# "
         APT_SERVICES="security, updates"
@@ -45,8 +87,8 @@ case "$ISO_VARIANT" in
     offline)
         SRC_SUBDIR="iso-dvd"
         SRC_NAME="debian-$DEBIAN_RELEASE-amd64-DVD-1.iso"
-        OUTPUT_NAME="debian-$DEBIAN_RELEASE-unattended-offline.iso"
-        VOLUME_ID="Debian $DEBIAN_RELEASE Unattended Offline"
+        OUTPUT_NAME="debian-$DEBIAN_RELEASE-unattended-offline$LAYOUT_SUFFIX$SWAP_SUFFIX.iso"
+        VOLUME_ID="Debian $DEBIAN_RELEASE $LAYOUT_NAME Offline"
         EXTRA_DEBS="unattended-upgrades"
         OFFLINE_ONLY=""
         APT_SERVICES=""
@@ -117,6 +159,22 @@ check_deps() {
     esac
     if [ "$LV_VAR_MIN" -gt "$LV_VAR_MAX" ]; then
         echo "[x] LV_VAR_MIN ($LV_VAR_MIN) is larger than LV_VAR_MAX ($LV_VAR_MAX)."
+        exit 1
+    fi
+    case "$SWAP_SIZE" in
+        *[!0-9]*)
+            echo "[x] SWAP_SIZE must be a plain integer in MB, 0 for no swap, or empty for 200% of RAM."
+            echo "    got: SWAP_SIZE='$SWAP_SIZE'"
+            exit 1 ;;
+    esac
+    if [ ! -f "$PARTMAN_TPL" ]; then
+        echo "[x] No partman recipe for DISK_LAYOUT=$DISK_LAYOUT."
+        echo "    expected: $PARTMAN_TPL"
+        exit 1
+    fi
+    if [ "$HAS_SWAP" = "yes" ] && [ ! -f "$SWAP_TPL" ]; then
+        echo "[x] No swap recipe for DISK_LAYOUT=$DISK_LAYOUT."
+        echo "    expected: $SWAP_TPL, or build with SWAP_SIZE=0"
         exit 1
     fi
     if [ -n "$SERIAL_CONSOLE" ]; then
@@ -293,10 +351,21 @@ patch_grub() {
     echo "[*] Patched: boot/grub/grub.cfg"
 }
 
+splice_file() {
+    awk -v marker="$1" -v tpl="$2" '
+        $0 == marker {
+            while ((getline line < tpl) > 0) print line
+            close(tpl)
+            next
+        }
+        { print }'
+}
+
 render_preseed() {
     local content pair placeholder varname value
     shopt -u patsub_replacement 2>/dev/null || true
-    content=$(<"$SCRIPT_DIR/preseed.cfg.tpl")
+    content=$(splice_file "@PARTMAN_RECIPE@" "$PARTMAN_TPL" < "$SCRIPT_DIR/preseed.cfg.tpl")
+    content=$(splice_file "@SWAP_RECIPE@" "$SWAP_TPL" <<< "$content")
     for pair in USERHASH:USER_HASH \
                 USERNAME:ADMIN_USER \
                 USER_FULLNAME:ADMIN_FULLNAME \
@@ -306,6 +375,12 @@ render_preseed() {
                 KEYMAP:KEYMAP \
                 TIMEZONE:TIMEZONE \
                 SUITE:DEBIAN_SUITE \
+                DISK_LAYOUT:DISK_LAYOUT \
+                HAS_SWAP:HAS_SWAP \
+                SWAP_MIN:SWAP_MIN \
+                SWAP_PRIO:SWAP_PRIO \
+                SWAP_MAX:SWAP_MAX \
+                PKGSEL_INCLUDE:PKGSEL_INCLUDE \
                 LV_VAR_MIN:LV_VAR_MIN \
                 LV_VAR_MAX:LV_VAR_MAX \
                 OFFLINE_ONLY:OFFLINE_ONLY \
@@ -439,7 +514,7 @@ add_custom_files() {
 
     mkdir -p "$WORK_DIR/custom"
     cp "$SCRIPT_DIR/custom/ssh-host-keygen.service" \
-       "$SCRIPT_DIR/custom/raid-setup.sh" \
+       "$SCRIPT_DIR/custom/disk-setup.sh" \
        "$SCRIPT_DIR/custom/sync-esp.sh" \
        "$WORK_DIR/custom/"
     if [ "$ISO_VARIANT" = "offline" ]; then

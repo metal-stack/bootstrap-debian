@@ -82,7 +82,52 @@ check_no_serial_console() {
 
 check_custom_files() {
     test -s "$CHECK/custom/authorized_keys"
-    test -s "$CHECK/custom/raid-setup.sh"
+    test -s "$CHECK/custom/disk-setup.sh"
+}
+
+check_early_command() {
+    grep -q "disk-setup.sh $DISK_LAYOUT $HAS_SWAP\$" "$CHECK/preseed.cfg" \
+      || die "preseed does not hand '$DISK_LAYOUT $HAS_SWAP' to disk-setup.sh"
+}
+
+check_swap() {
+    case "$HAS_SWAP:$SWAP_SIZE" in
+        no:*)
+            ! grep -qE 'lv_swap|method\{ swap \}' "$CHECK/preseed.cfg" \
+              || die "SWAP_SIZE=0 but the recipe still carries a swap LV"
+            [ "$(grep -c 'method{ raid }' "$CHECK/preseed.cfg")" -le 2 ] \
+              || die "SWAP_SIZE=0 but the recipe still carries a third RAID partition for swap"
+            grep -q "disk-setup.sh $DISK_LAYOUT no\$" "$CHECK/preseed.cfg" \
+              || die "SWAP_SIZE=0 but disk-setup.sh is not told so, raid1 would build a swap array" ;;
+        yes:)
+            grep -qE "^ +$DEFAULT_SWAP_MIN $DEFAULT_SWAP_PRIO 200% (raid|linux-swap) " "$CHECK/preseed.cfg" \
+              || die "SWAP_SIZE is empty but the $DISK_LAYOUT recipe has no '$DEFAULT_SWAP_MIN $DEFAULT_SWAP_PRIO 200%' swap stanza" ;;
+        yes:*)
+            grep -qE "^ +$SWAP_SIZE $SWAP_SIZE $SWAP_SIZE (raid|linux-swap) " "$CHECK/preseed.cfg" \
+              || die "SWAP_SIZE=$SWAP_SIZE but the recipe has no swap stanza of that size" ;;
+    esac
+}
+
+check_raid1_layout() {
+    grep -q '^d-i partman-auto/method string raid$' "$CHECK/preseed.cfg" \
+      || die "raid1 ISO does not drive partman with method raid"
+    grep -q '^d-i partman-auto/choose_recipe select multiraid$' "$CHECK/preseed.cfg" \
+      || die "raid1 ISO does not select the multiraid recipe"
+    grep -q '^d-i mdadm/boot_degraded boolean true$' "$CHECK/preseed.cfg" \
+      || die "raid1 ISO would drop to an initramfs prompt after a disk fails"
+    grep -q '^d-i pkgsel/include string .*mdadm' "$CHECK/preseed.cfg" \
+      || die "raid1 ISO does not install mdadm"
+}
+
+check_single_layout() {
+    grep -q '^d-i partman-auto/method string lvm$' "$CHECK/preseed.cfg" \
+      || die "single ISO does not drive partman with method lvm"
+    grep -q '^d-i partman-auto/choose_recipe select singledisk$' "$CHECK/preseed.cfg" \
+      || die "single ISO does not select the singledisk recipe"
+    grep -q 'method{ lvm }' "$CHECK/preseed.cfg" \
+      || die "single recipe declares no LVM physical volume"
+    ! grep -q 'lvmignore' "$CHECK/preseed.cfg" \
+      || die "single recipe carries \$lvmignore, which method lvm drops: the ESP and /boot would vanish"
 }
 
 check_netinst() {
@@ -138,12 +183,18 @@ main() {
         check_no_serial_console
     fi
     check_custom_files
+    check_early_command
+    case "$DISK_LAYOUT" in
+        raid1)  check_raid1_layout ;;
+        single) check_single_layout ;;
+    esac
+    check_swap
     case "$ISO_VARIANT" in
         netinst) check_netinst ;;
         offline) check_offline; check_shipped_deb_deps ;;
     esac
 
-    echo "ISO verified ($ISO_VARIANT)"
+    echo "ISO verified ($ISO_VARIANT, $DISK_LAYOUT, swap=${SWAP_SIZE:-default})"
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then

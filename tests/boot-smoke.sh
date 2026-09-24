@@ -4,7 +4,8 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OVMF_CANDIDATES=(/usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd
                  /usr/share/ovmf/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd)
-DISK_SIZE=64G
+DISK_SIZE="${SMOKE_DISK_SIZE:-64G}"
+SMOKE_DISKS="${SMOKE_DISKS:-2}"
 BOOT_DEADLINE="${SMOKE_BOOT_DEADLINE:-420}"
 LOGIN_PROMPT="${SMOKE_LOGIN_PROMPT:-login:}"
 
@@ -20,6 +21,7 @@ INSTALL_SEEN=""
 QEMU=""
 FW=()
 SERIAL_ARGS=()
+DISK_ARGS=()
 SERIAL_UNIT=""
 MARK=1
 FAILED=0
@@ -102,10 +104,26 @@ firmware_args() {
         -drive "if=pflash,format=raw,file=$WORK/vars.fd")
 }
 
+require_disk_count() {
+    case "$SMOKE_DISKS" in
+        ''|*[!0-9]*|0) die "SMOKE_DISKS must be a positive whole number, got '$SMOKE_DISKS'" ;;
+    esac
+}
+
 create_disks() {
-    local d
-    for d in 1 2; do
+    local d=1
+    while [ "$d" -le "$SMOKE_DISKS" ]; do
         qemu-img create -f qcow2 "$WORK/d$d.qcow2" "$DISK_SIZE" >/dev/null
+        d=$((d + 1))
+    done
+}
+
+disk_args() {
+    local d=1
+    DISK_ARGS=()
+    while [ "$d" -le "$SMOKE_DISKS" ]; do
+        DISK_ARGS+=(-drive "file=$WORK/d$d.qcow2,if=virtio,format=qcow2")
+        d=$((d + 1))
     done
 }
 
@@ -115,8 +133,7 @@ start_qemu() {
     : > "$SEEN"
     MARK=1
     qemu-system-x86_64 -accel "$ACCEL" -m 2048 -smp 2 "${FW[@]}" "${boot[@]}" \
-        -drive file="$WORK/d1.qcow2",if=virtio,format=qcow2 \
-        -drive file="$WORK/d2.qcow2",if=virtio,format=qcow2 \
+        "${DISK_ARGS[@]}" \
         -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
         -display none "${SERIAL_ARGS[@]}" -no-reboot 2>"$WORK/qemu.err" &
     QEMU=$!
@@ -185,7 +202,7 @@ run_install() {
     reach "d-i starts, network needs no answer"  'Configuring the network with DHCP' "$BOOT_DEADLINE" &&
     reach "hardware detected, nothing asked"     'Detecting disks and all other hardware' "$BOOT_DEADLINE" &&
     reach "partitioner starts"                   'Starting up the partitioner' "$BOOT_DEADLINE" &&
-    reach "RAID and LVM built, base system runs" 'Installing the base system' "$DEADLINE" &&
+    reach "partitions built, base system runs"   'Installing the base system' "$DEADLINE" &&
     reach "installation finishes"                'Finishing the installation' "$DEADLINE" &&
     wait_for_power_off
     local status=$?
@@ -234,11 +251,13 @@ main() {
     : > "$INSTALL_SEEN"
 
     require_serial_console
+    require_disk_count
     serial_args
     firmware_args
+    disk_args
     create_disks
 
-    echo "[$MODE] ${ISO##*/} ($ACCEL, install deadline ${DEADLINE}s)"
+    echo "[$MODE] ${ISO##*/} on $SMOKE_DISKS disk(s) of $DISK_SIZE ($ACCEL, install deadline ${DEADLINE}s)"
     if run_install; then
         [ -n "${SMOKE_LOG:-}" ] && cp "$LOG" "$SMOKE_LOG.install"
         run_installed_system

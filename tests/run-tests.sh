@@ -167,8 +167,9 @@ test_preseed_rendering() {
     local variant
     SERIAL_CONSOLE="" ISO_VARIANT=netinst render netinst
     SERIAL_CONSOLE="" ISO_VARIANT=offline render offline
+    SERIAL_CONSOLE="" DISK_LAYOUT=single render single
 
-    for variant in netinst offline; do
+    for variant in netinst offline single; do
         lacks "$variant: no unsubstituted placeholders" "$TMP/preseed.$variant" '@[A-Z_]+@'
     done
     has "mirror/suite rendered" "$TMP/preseed.netinst" '^d-i mirror/suite string trixie$'
@@ -199,6 +200,203 @@ KEYS
         '^# d-i apt-setup/use_mirror boolean false$'
     has "offline: late_command calls offline-post.sh" "$TMP/preseed.offline" \
         'sh /cdrom/custom/offline-post\.sh trixie;'
+}
+
+lvmok_mountpoints() {
+    awk '
+        $1 == "." { if (lvmok && mp) printf "%s ", mp; lvmok = 0; mp = ""; next }
+        /\$lvmok\{/ { lvmok = 1 }
+        match($0, /mountpoint\{ *[^ }]+ *\}/) {
+            mp = substr($0, RSTART, RLENGTH)
+            gsub(/mountpoint\{ *| *\}/, "", mp)
+        }
+        END { if (lvmok && mp) printf "%s ", mp }
+    ' "$1"
+}
+
+recipe_end() {
+    awk '/^d-i partman-auto\/expert_recipe string/ { inside = 1 }
+         inside { line = $0; sub(/\\$/, "", line); joined = joined line
+                  if ($0 !~ /\\$/) { print joined; exit } }' "$1" \
+        | tr -s ' ' | grep -oE 'mountpoint\{ [^ ]+ \} \.$'
+}
+
+test_disk_layout() {
+    cat > "$TMP/expected-layout-keys" <<'KEYS'
+d-i mdadm/boot_degraded
+d-i partman-auto/choose_recipe
+d-i partman-auto/method
+d-i partman/early_command
+d-i pkgsel/include
+KEYS
+    diff "$TMP/preseed.netinst" "$TMP/preseed.single" \
+        | sed -n 's/^[<>] *//p' | sed 's/^# //' \
+        | grep '^d-i ' | awk '{ print $1, $2 }' | sort -u > "$TMP/actual-layout-keys"
+    equals "single layout differs in exactly the expected d-i keys" \
+        "$(< "$TMP/expected-layout-keys")" "$(< "$TMP/actual-layout-keys")"
+
+    has "raid1: partman drives RAID"  "$TMP/preseed.netinst" \
+        '^d-i partman-auto/method string raid$'
+    has "single: partman drives LVM"  "$TMP/preseed.single" \
+        '^d-i partman-auto/method string lvm$'
+    has "raid1: multiraid recipe selected" "$TMP/preseed.netinst" \
+        '^d-i partman-auto/choose_recipe select multiraid$'
+    has "single: singledisk recipe selected" "$TMP/preseed.single" \
+        '^d-i partman-auto/choose_recipe select singledisk$'
+    has "raid1: early_command asks for the raid1 layout" "$TMP/preseed.netinst" \
+        'disk-setup\.sh raid1 yes$'
+    has "single: early_command asks for the single layout" "$TMP/preseed.single" \
+        'disk-setup\.sh single yes$'
+    has "raid1: mdadm installed for the arrays" "$TMP/preseed.netinst" \
+        '^d-i pkgsel/include string openssh-server python3 mdadm$'
+    has "single: no mdadm, there is no array" "$TMP/preseed.single" \
+        '^d-i pkgsel/include string openssh-server python3$'
+    has "raid1: boot_degraded set" "$TMP/preseed.netinst" \
+        '^d-i mdadm/boot_degraded boolean true$'
+    lacks "single: no boot_degraded, there is no array" "$TMP/preseed.single" \
+        '^d-i mdadm/boot_degraded'
+
+    has "single: the recipe declares an LVM physical volume" "$TMP/preseed.single" \
+        'method\{ lvm \}'
+    has "single: recipe body is the singledisk one" "$TMP/preseed.single" '^ singledisk ::'
+    has "raid1: recipe body is the multiraid one"  "$TMP/preseed.netinst" '^ multiraid ::'
+
+    has   "raid1: lvmignore is what keeps partitions out of the LVM pass" \
+        "$TMP/preseed.netinst" '\$lvmignore\{'
+    lacks "single: no lvmignore, under method lvm it would drop the partition" \
+        "$TMP/preseed.single" '\$lvmignore\{'
+
+    equals "single: only / and /var are logical volumes, never /boot" \
+        "/ /var " "$(lvmok_mountpoints "$REPO/partman/single.tpl")"
+    equals "raid1: only / and /var are logical volumes, never /boot" \
+        "/ /var " "$(lvmok_mountpoints "$REPO/partman/raid1.tpl")"
+
+    local variant
+    for variant in netinst single; do
+        equals "$variant: the recipe ends on its last stanza, not cut short" \
+            "mountpoint{ /var } ." "$(recipe_end "$TMP/preseed.$variant")"
+        has "$variant: the recipe reaches lv_var" "$TMP/preseed.$variant" \
+            'lv_name\{ lv_var \}'
+    done
+
+    DISK_LAYOUT=btrfs aborts "unknown DISK_LAYOUT aborts" "Unknown DISK_LAYOUT" ':'
+    DISK_LAYOUT=single PARTMAN_TPL=/nonexistent/layout.tpl \
+        deps_abort "a missing partman fragment aborts" "No partman recipe for"
+}
+
+disk_setup() {
+    local bin="$TMP/disk-setup-bin" disks="$1"; shift
+    mkdir -p "$bin"
+    printf '#!/bin/sh\nprintf "%%s\\n" %s\n' "$disks" > "$bin/list-devices"
+    printf '#!/bin/sh\necho "debconf-set $*"\n' > "$bin/debconf-set"
+    chmod +x "$bin/list-devices" "$bin/debconf-set"
+    PATH="$bin:$PATH" sh "$REPO/custom/disk-setup.sh" "$@" 2>&1
+}
+
+test_disk_setup() {
+    local out
+    equals "disk-setup raid1: three arrays across both disks" \
+        "debconf-set partman-auto-raid/recipe 1 2 0 ext4 /boot /dev/vda3#/dev/vdb3 . 1 2 0 lvm - /dev/vda4#/dev/vdb4 . 1 2 0 swap - /dev/vda5#/dev/vdb5 ." \
+        "$(disk_setup "/dev/vda /dev/vdb" raid1 yes | grep 'partman-auto-raid/recipe')"
+
+    if out=$(disk_setup "/dev/vda" raid1 yes); then
+        fail "disk-setup raid1: one disk aborts" "did not abort: $out"
+    elif [[ "$out" != *"DISK_LAYOUT=single"* ]]; then
+        fail "disk-setup raid1: one disk aborts" "abort does not name DISK_LAYOUT=single: $out"
+    else
+        pass "disk-setup raid1: one disk aborts and names DISK_LAYOUT=single"
+    fi
+
+    out=$(disk_setup "/dev/vda" single yes)
+    equals "disk-setup single: the one disk becomes the install target" \
+        "debconf-set partman-auto/disk /dev/vda" "$(grep 'partman-auto/disk' <<< "$out")"
+    equals "disk-setup single: grub goes to that disk" \
+        "debconf-set grub-installer/bootdev /dev/vda" "$(grep 'grub-installer/bootdev' <<< "$out")"
+    lacks_text "disk-setup single: no RAID recipe is set" "$out" 'partman-auto-raid'
+
+    out=$(disk_setup "/dev/vdb /dev/vda" single yes)
+    equals "disk-setup single: equal sizes pick by device name, only one disk" \
+        "debconf-set partman-auto/disk /dev/vda" "$(grep 'partman-auto/disk' <<< "$out")"
+
+    if out=$(disk_setup "" single yes); then
+        fail "disk-setup single: no disk aborts" "did not abort: $out"
+    else
+        pass "disk-setup single: no disk aborts"
+    fi
+}
+
+lacks_text() {
+    [[ "$2" == *"$3"* ]] && fail "$1" "found '$3' in: $2" || pass "$1"
+}
+
+test_swap() {
+    SERIAL_CONSOLE="" SWAP_SIZE=0    DISK_LAYOUT=single render single-noswap
+    SERIAL_CONSOLE="" SWAP_SIZE=0    DISK_LAYOUT=raid1  render raid1-noswap
+    SERIAL_CONSOLE="" SWAP_SIZE=4096 DISK_LAYOUT=single render single-4096
+    SERIAL_CONSOLE="" SWAP_SIZE=4096 DISK_LAYOUT=raid1  render raid1-4096
+
+    has   "default single: swap LV fixed at 200% of RAM, so lv_var takes the rest of vg0" \
+        "$TMP/preseed.single" '^ +200% 200% 200% linux-swap'
+    has   "default raid1: swap array at 200% of RAM" "$TMP/preseed.netinst" \
+        '^ +2048 102400000 200% raid'
+    has   "SWAP_SIZE=4096 single: fixed 4096 MB swap LV" "$TMP/preseed.single-4096" \
+        '^ +4096 4096 4096 linux-swap'
+    has   "SWAP_SIZE=4096 raid1: fixed 4096 MB swap array" "$TMP/preseed.raid1-4096" \
+        '^ +4096 4096 4096 raid'
+    lacks "SWAP_SIZE=4096: no 200% stanza left" "$TMP/preseed.raid1-4096" '200%'
+
+    has   "SWAP_SIZE=0 single: the recipe still has a root LV" "$TMP/preseed.single-noswap" \
+        'lv_name\{ lv_root \}'
+    lacks "SWAP_SIZE=0 single: no swap LV" "$TMP/preseed.single-noswap" \
+        'lv_swap|method\{ swap \}'
+    equals "SWAP_SIZE=0 raid1: only the /boot and PV partitions are RAID" "2" \
+        "$(grep -c 'method{ raid }' "$TMP/preseed.raid1-noswap")"
+    equals "default raid1: /boot, PV and swap partitions are RAID" "3" \
+        "$(grep -c 'method{ raid }' "$TMP/preseed.netinst")"
+    has "SWAP_SIZE=0: early_command tells disk-setup.sh there is no swap" \
+        "$TMP/preseed.single-noswap" 'disk-setup\.sh single no$'
+    has "SWAP_SIZE=0 raid1: early_command tells disk-setup.sh there is no swap" \
+        "$TMP/preseed.raid1-noswap" 'disk-setup\.sh raid1 no$'
+    has "partman does not stop to ask about a missing swap" \
+        "$TMP/preseed.single-noswap" '^d-i partman-basicfilesystems/no_swap boolean false$'
+
+    local variant
+    for variant in single-noswap raid1-noswap single-4096 raid1-4096; do
+        lacks "$variant: no unsubstituted placeholders" "$TMP/preseed.$variant" '@[A-Z_]+@'
+        equals "$variant: the recipe ends on its last stanza, not cut short" \
+            "mountpoint{ /var } ." "$(recipe_end "$TMP/preseed.$variant")"
+    done
+
+    equals "disk-setup raid1 without swap: no third array" \
+        "debconf-set partman-auto-raid/recipe 1 2 0 ext4 /boot /dev/vda3#/dev/vdb3 . 1 2 0 lvm - /dev/vda4#/dev/vdb4 ." \
+        "$(disk_setup "/dev/vda /dev/vdb" raid1 no | grep 'partman-auto-raid/recipe')"
+
+    equals "SWAP_SIZE=0 renames the image" \
+        "debian-13.6.0-unattended-single-noswap.iso" \
+        "$(DISK_LAYOUT=single SWAP_SIZE=0 run 'echo "$OUTPUT_NAME"')"
+    equals "a fixed SWAP_SIZE keeps the image name" \
+        "debian-13.6.0-unattended.iso" \
+        "$(SWAP_SIZE=4096 run 'echo "$OUTPUT_NAME"')"
+    SWAP_SIZE=4G deps_abort "SWAP_SIZE=4G aborts" "SWAP_SIZE must be a plain integer in MB"
+    SWAP_SIZE=-1 deps_abort "SWAP_SIZE=-1 aborts" "SWAP_SIZE must be a plain integer in MB"
+    SWAP_SIZE=4096 deps_ok "SWAP_SIZE=4096 accepted"
+}
+
+test_layout_image_names() {
+    local name
+    for name in "raid1 netinst debian-13.6.0-unattended.iso" \
+                "single netinst debian-13.6.0-unattended-single.iso" \
+                "raid1 offline debian-13.6.0-unattended-offline.iso" \
+                "single offline debian-13.6.0-unattended-offline-single.iso"; do
+        set -- $name
+        equals "$1/$2 builds $3" "$3" \
+            "$(DISK_LAYOUT="$1" ISO_VARIANT="$2" run 'echo "$OUTPUT_NAME"')"
+    done
+
+    equals "single: volume id stays inside the 32 byte ISO9660 field" "20" \
+        "$(DISK_LAYOUT=single ISO_VARIANT=netinst run 'echo -n "$VOLUME_ID" | wc -c')"
+    equals "single offline: volume id stays inside the 32 byte field" "28" \
+        "$(DISK_LAYOUT=single ISO_VARIANT=offline run 'echo -n "$VOLUME_ID" | wc -c')"
 }
 
 test_serial_validation() {
@@ -325,6 +523,19 @@ test_smoke_stage_order() {
     esac
 }
 
+test_smoke_disk_count() {
+    equals "smoke: two disks by default" \
+        "-drive file=/w/d1.qcow2,if=virtio,format=qcow2 -drive file=/w/d2.qcow2,if=virtio,format=qcow2" \
+        "$(smoke 'WORK=/w; disk_args; echo "${DISK_ARGS[*]}"')"
+    equals "smoke: SMOKE_DISKS=1 attaches a single disk" \
+        "-drive file=/w/d1.qcow2,if=virtio,format=qcow2" \
+        "$(smoke 'WORK=/w; SMOKE_DISKS=1; disk_args; echo "${DISK_ARGS[*]}"')"
+    case "$(SMOKE_DISKS=0 smoke 'require_disk_count')" in
+        *"SMOKE_DISKS must be"*) pass "smoke: SMOKE_DISKS=0 aborts" ;;
+        *) fail "smoke: SMOKE_DISKS=0 aborts" "no abort message" ;;
+    esac
+}
+
 main() {
     TMP=$(mktemp -d)
     trap 'rm -rf "$TMP"' EXIT
@@ -341,11 +552,16 @@ main() {
     test_package_index
     test_preseed_rendering
     test_offline_variant
+    test_disk_layout
+    test_disk_setup
+    test_layout_image_names
+    test_swap
     test_serial_validation
     test_serial_preseed
     test_boot_config
     test_smoke_serial_wiring
     test_smoke_stage_order
+    test_smoke_disk_count
 
     echo
     echo "  $PASSED passed, $FAILED failed"
