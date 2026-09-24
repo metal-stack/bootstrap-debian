@@ -119,12 +119,37 @@ test_checksums() {
     rejects  "missing file does not validate"  'validate_iso "$1" "$2"' /nonexistent/iso "$good"
 }
 
+fake_gpg() {
+    printf '#!/bin/sh\nprintf "[GNUPG:] VALIDSIG %s 2026-01-01 0 4 0 1 10 00 %s\\n"\nexit 0\n' "$1" "$1" > "$2/gpg"
+    chmod +x "$2/gpg"
+}
+
 test_signature_policy() {
-    local check='check_sums_signature /dev/null /nonexistent/sig'
+    local check='check_sums_signature /dev/null /nonexistent/sig' mode
     CHECK_SIGNATURE=no   succeeds "CHECK_SIGNATURE=no skips the check" "$check"
     CHECK_SIGNATURE=auto succeeds "CHECK_SIGNATURE=auto warns and continues" "$check"
     CHECK_SIGNATURE=yes  aborts "CHECK_SIGNATURE=yes aborts without a signature" \
         "Cannot verify the SHA256SUMS signature" "$check"
+
+    local bin="$TMP/fakebin" sums="$TMP/sums" sig="$TMP/sig"
+    mkdir -p "$bin"
+    : > "$sums"
+    printf 'garbage\n' > "$sig"
+
+    fake_gpg DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF "$bin"
+    for mode in no auto yes; do
+        CHECK_SIGNATURE="$mode" aborts \
+            "CHECK_SIGNATURE=$mode aborts on a good signature by an unlisted key" \
+            "not a Debian CD signing key" \
+            "PATH=$bin:\$PATH check_sums_signature $sums $sig"
+    done
+
+    fake_gpg DF9B9C49EAA9298432589D76DA87E80D6294BE9B "$bin"
+    for mode in no auto yes; do
+        CHECK_SIGNATURE="$mode" succeeds \
+            "CHECK_SIGNATURE=$mode accepts the trixie CD signing key" \
+            "PATH=$bin:\$PATH check_sums_signature $sums $sig"
+    done
 }
 
 test_download_abort() {

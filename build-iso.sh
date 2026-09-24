@@ -216,25 +216,29 @@ validate_iso() {
 
 check_sums_signature() {
     local sums="$1" sig="$2" status fpr
-    [ "$CHECK_SIGNATURE" = "no" ] && return 0
-
     local why=""
+
+    if [ -s "$sig" ] && command -v gpg &>/dev/null; then
+        status=$(gpg --status-fd 1 --verify "$sig" "$sums" 2>/dev/null || true)
+        fpr=$(awk '$2 == "VALIDSIG" { print $3; exit }' <<< "$status")
+        if [ -n "$fpr" ]; then
+            if ! grep -qxF "$fpr" <<< "$DEBIAN_CD_KEYS"; then
+                echo "[x] SHA256SUMS is signed by $fpr, which is not a Debian CD signing key."
+                echo "    Someone other than Debian signed the checksums; stopping."
+                exit 1
+            fi
+            echo "[*] SHA256SUMS signature verified ($fpr)"
+            return 0
+        fi
+    fi
+
+    [ "$CHECK_SIGNATURE" = "no" ] && return 0
     if [ ! -s "$sig" ]; then
         why="SHA256SUMS.sign was not available"
     elif ! command -v gpg &>/dev/null; then
         why="gpg is not installed"
     else
-        status=$(gpg --status-fd 1 --verify "$sig" "$sums" 2>/dev/null || true)
-        fpr=$(awk '$2 == "VALIDSIG" { print $3; exit }' <<< "$status")
-        if [ -z "$fpr" ]; then
-            why="no valid signature (gpg has no Debian CD signing key?)"
-        elif ! grep -qxF "$fpr" <<< "$DEBIAN_CD_KEYS"; then
-            echo "[x] SHA256SUMS is signed by $fpr, which is not a Debian CD signing key."
-            exit 1
-        else
-            echo "[*] SHA256SUMS signature verified ($fpr)"
-            return 0
-        fi
+        why="no valid signature (gpg has no Debian CD signing key?)"
     fi
 
     if [ "$CHECK_SIGNATURE" = "yes" ]; then
