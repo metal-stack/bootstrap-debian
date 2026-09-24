@@ -90,7 +90,7 @@ offline:
 single:
 	@$(MAKE) --no-print-directory iso DISK_LAYOUT=single
 
-verify: $(ISO_DEP)
+verify: iso
 	./verify-iso.sh
 
 test:
