@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -u
+
 FSTAB=/target/etc/fstab
 MNT=/tmp/esp2-mnt
 
@@ -32,4 +34,6 @@ main() {
     mirror_esp
 }
 
-main "$@"
+if [ "${0##*/}" = "sync-esp.sh" ]; then
+    main "$@"
+fi

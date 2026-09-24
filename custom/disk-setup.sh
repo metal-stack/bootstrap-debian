@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -eu
+
 INSTALL_DISK=""
 DISKS=""
 COUNT=0
@@ -12,11 +14,20 @@ part() {
     esac
 }
 
+parent_disk() {
+    base=$(printf '%s' "$1" | sed -e 's/[0-9]*$//' -e 's/p$//')
+    if [ -e "${SYS_BLOCK_DIR:-/sys/block}/${base##*/}" ]; then
+        printf '%s\n' "$base"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
 find_install_disk() {
     dev=$(awk '$2 == "/cdrom" { print $1 }' /proc/mounts | head -1)
     INSTALL_DISK=""
     if [ -n "$dev" ]; then
-        INSTALL_DISK=$(echo "$dev" | sed -e 's/[0-9]*$//' -e 's/p$//')
+        INSTALL_DISK=$(parent_disk "$dev")
     fi
 }
 
@@ -90,4 +101,6 @@ main() {
     esac
 }
 
-main "$@"
+if [ "${0##*/}" = "disk-setup.sh" ]; then
+    main "$@"
+fi

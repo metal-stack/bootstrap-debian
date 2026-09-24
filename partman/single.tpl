@@ -19,7 +19,7 @@ d-i partman-auto/expert_recipe string         \
      use_filesystem{ } filesystem{ ext4 }     \
      mountpoint{ /boot }                      \
    .                                          \
-   10240 102400000 1000000000 ext3            \
+   10240 102400000 1000000000 ext4            \
      $primary{ }                              \
      method{ lvm }                            \
    .                                          \

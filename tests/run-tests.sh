@@ -297,6 +297,25 @@ disk_setup() {
     PATH="$bin:$PATH" sh "$REPO/custom/disk-setup.sh" "$@" 2>&1
 }
 
+disk_parent() {
+    SYS_BLOCK_DIR="$1" sh -c '. "$1"; parent_disk "$2"' _ "$REPO/custom/disk-setup.sh" "$2"
+}
+
+test_disk_parent() {
+    local sys="$TMP/sys"
+    mkdir -p "$sys/sda" "$sys/nvme0n1" "$sys/mmcblk0"
+    equals "parent: a partition of a scsi disk resolves to the disk" \
+        "/dev/sda" "$(disk_parent "$sys" /dev/sda3)"
+    equals "parent: a partition of an nvme disk resolves to the disk" \
+        "/dev/nvme0n1" "$(disk_parent "$sys" /dev/nvme0n1p1)"
+    equals "parent: a partition of an mmc disk resolves to the disk" \
+        "/dev/mmcblk0" "$(disk_parent "$sys" /dev/mmcblk0p1)"
+    equals "parent: a whole disk with no entry keeps its own name" \
+        "/dev/sr0" "$(disk_parent "$sys" /dev/sr0)"
+    equals "parent: an unknown partition keeps its own name" \
+        "/dev/sdz1" "$(disk_parent "$sys" /dev/sdz1)"
+}
+
 test_disk_setup() {
     local out
     equals "disk-setup raid1: three arrays across both disks" \
@@ -558,6 +577,7 @@ main() {
     test_preseed_rendering
     test_offline_variant
     test_disk_layout
+    test_disk_parent
     test_disk_setup
     test_layout_image_names
     test_swap
