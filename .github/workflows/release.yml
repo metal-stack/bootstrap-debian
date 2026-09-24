@@ -20,6 +20,14 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        layout: [raid1, single]
+        swap: ['', 0]
+    env:
+      DISK_LAYOUT: ${{ matrix.layout }}
+      SWAP_SIZE: ${{ matrix.swap }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,8 +44,10 @@ jobs:
 
       - uses: actions/cache@v4
         with:
-          path: out/debian-${{ env.DEBIAN_RELEASE }}-amd64-netinst.iso
-          key: netinst-${{ env.DEBIAN_RELEASE }}
+          path: |
+            out/debian-${{ env.DEBIAN_RELEASE }}-amd64-netinst.iso
+            out/debian-${{ env.DEBIAN_RELEASE }}-amd64-DVD-1.iso
+          key: debian-sources-${{ hashFiles('Makefile', 'build-iso.sh') }}
 
       - name: Build
         env:
@@ -60,11 +70,14 @@ jobs:
           SERIAL_CONSOLE: 'ttyS0,115200n8'
         run: ./build-iso.sh
 
-      - name: Boot smoke test
+      - name: Boot smoke test (${{ matrix.layout }}, SWAP_SIZE=${{ matrix.swap || 'default' }})
         run: |
           ls -l /dev/kvm || echo "::warning::no /dev/kvm on this runner, QEMU falls back to TCG"
           make smoke
           make smoke-uefi
+      - name: Boot smoke test with a second disk left alone
+        if: matrix.layout == 'single'
+        run: make smoke SMOKE_DISKS=2
 
   release:
     needs: build

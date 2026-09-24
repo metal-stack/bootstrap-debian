@@ -13,3 +13,36 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck and tests
         run: make check
+
+  layouts:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        layout: [raid1, single]
+        swap: ['', 0]
+        include:
+          - layout: raid1
+            swap: ''
+            variant: offline
+    env:
+      USERHASH: '$6$ci$3xT0lTBnPzMHK'
+      SSH_PUBKEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGciTest ci@example'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build tools
+        run: sudo apt-get update && sudo apt-get install -y xorriso wget whois cpio xz-utils
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out/debian-*-amd64-netinst.iso
+            out/debian-*-amd64-DVD-1.iso
+          key: debian-sources-${{ hashFiles('Makefile', 'build-iso.sh') }}
+      - name: Build and verify
+        env:
+          DISK_LAYOUT: ${{ matrix.layout }}
+          SWAP_SIZE: ${{ matrix.swap }}
+          ISO_VARIANT: ${{ matrix.variant || 'netinst' }}
+        run: |
+          make iso
+          make verify
