@@ -113,8 +113,6 @@ check_raid1_layout() {
       || die "raid1 ISO does not drive partman with method raid"
     grep -q '^d-i partman-auto/choose_recipe select multiraid$' "$CHECK/preseed.cfg" \
       || die "raid1 ISO does not select the multiraid recipe"
-    grep -q '^d-i mdadm/boot_degraded boolean true$' "$CHECK/preseed.cfg" \
-      || die "raid1 ISO would drop to an initramfs prompt after a disk fails"
     grep -q '^d-i pkgsel/include string .*mdadm' "$CHECK/preseed.cfg" \
       || die "raid1 ISO does not install mdadm"
 }

@@ -232,7 +232,6 @@ recipe_end() {
 
 test_disk_layout() {
     cat > "$TMP/expected-layout-keys" <<'KEYS'
-d-i mdadm/boot_degraded
 d-i partman-auto/choose_recipe
 d-i partman-auto/method
 d-i partman/early_command
@@ -260,10 +259,6 @@ KEYS
         '^d-i pkgsel/include string openssh-server python3 mdadm$'
     has "single: no mdadm, there is no array" "$TMP/preseed.single" \
         '^d-i pkgsel/include string openssh-server python3$'
-    has "raid1: boot_degraded set" "$TMP/preseed.netinst" \
-        '^d-i mdadm/boot_degraded boolean true$'
-    lacks "single: no boot_degraded, there is no array" "$TMP/preseed.single" \
-        '^d-i mdadm/boot_degraded'
 
     has "single: the recipe declares an LVM physical volume" "$TMP/preseed.single" \
         'method\{ lvm \}'

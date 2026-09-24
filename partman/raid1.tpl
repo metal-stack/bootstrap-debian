@@ -42,5 +42,3 @@ d-i partman-auto/expert_recipe string         \
      use_filesystem{ } filesystem{ ext4 }     \
      mountpoint{ /var }                       \
    .
-
-d-i mdadm/boot_degraded boolean true

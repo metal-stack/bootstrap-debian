@@ -208,6 +208,13 @@ Identical GPT on both disks: `bios_boot` (1 MB), ESP (512 MB), then three RAID1 
 LV_VAR_MAX=51200 ./build-iso.sh    # /var stops at 50 GB
 ```
 
+Losing a disk does not stop the boot. mdadm's initramfs script assembles
+what it can: it runs `mdadm --assemble --scan --no-degraded` first and
+retries with `--run` after two thirds of `ROOTDELAY`, which starts the array
+degraded (`usr/share/initramfs-tools/scripts/local-block/mdadm` in mdadm
+4.4-11, the version on this image). Read, not run: nothing here boots a
+raid1 machine with a disk missing.
+
 ### `DISK_LAYOUT=single`
 
 One GPT on the one disk, no arrays:
