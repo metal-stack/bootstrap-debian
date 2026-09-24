@@ -82,6 +82,15 @@ test_suite_lookup() {
         deps_abort "unknown major aborts" "No codename known"
 }
 
+test_user_hash() {
+    local check='prepare_user_hash < /dev/null'
+    USERHASH='$6$test$hash' succeeds "a sha-512 hash is accepted" "$check"
+    USERHASH='plaintext' aborts "a non-hash USERHASH aborts" \
+        "not a sha-512 crypt hash" "$check"
+    USERHASH='' aborts "no USERHASH and no terminal aborts" \
+        "stdin is not a terminal" "$check"
+}
+
 test_config_validation() {
     LV_VAR_MIN=50000 LV_VAR_MAX=10000 \
         deps_abort "LV_VAR_MIN > LV_VAR_MAX aborts" "is larger than LV_VAR_MAX"
@@ -543,6 +552,7 @@ main() {
     make_tool_stubs
 
     test_suite_lookup
+    test_user_hash
     test_config_validation
     test_iso_variants
     test_checksums

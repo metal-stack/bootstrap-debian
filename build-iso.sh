@@ -190,9 +190,22 @@ check_deps() {
 prepare_user_hash() {
     USER_HASH="${USERHASH:-}"
     if [ -z "$USER_HASH" ]; then
+        if [ ! -t 0 ]; then
+            echo "[x] USERHASH is empty and stdin is not a terminal, so there is no one to ask."
+            echo "    Unattended builds have to bring their own hash:"
+            echo "      USERHASH=\"\$(mkpasswd -m sha-512)\" ./build-iso.sh"
+            exit 1
+        fi
         echo "[*] Choose a password for user '$ADMIN_USER' (stored sha-512-hashed in the ISO):"
         USER_HASH=$(mkpasswd -m sha-512)
     fi
+    case "$USER_HASH" in
+        '$6$'*) ;;
+        *)  echo "[x] USERHASH is not a sha-512 crypt hash, so user '$ADMIN_USER' could not log in."
+            echo "    expected a value starting with \$6\$, got: '$USER_HASH'"
+            echo "    make one with: mkpasswd -m sha-512"
+            exit 1 ;;
+    esac
 }
 
 validate_iso() {
