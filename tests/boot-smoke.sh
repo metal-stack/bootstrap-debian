@@ -170,8 +170,8 @@ reach() {
             ok "$name ($((SECONDS - start))s)"
             return 0
         fi
-        if grep -q '\[!!\]' "$SEEN"; then
-            bad "$name" "d-i is asking: $(grep -m1 -A3 '\[!!\]' "$SEEN" | tr -s ' \n' ' ')"
+        if grep -q '\[!!*\]' "$SEEN"; then
+            bad "$name" "d-i is asking: $(grep -m1 -A3 '\[!!*\]' "$SEEN" | tr -s ' \n' ' ')"
             return 1
         fi
         if ! qemu_running; then
@@ -192,9 +192,9 @@ wait_for_power_off() {
             return 0
         fi
         snapshot
-        if grep -q '\[!!\]' "$SEEN"; then
+        if grep -q '\[!!*\]' "$SEEN"; then
             bad "installer powered the machine off" \
-                "d-i is asking: $(grep -m1 -A3 '\[!!\]' "$SEEN" | tr -s ' \n' ' ')"
+                "d-i is asking: $(grep -m1 -A3 '\[!!*\]' "$SEEN" | tr -s ' \n' ' ')"
             return 1
         fi
         sleep 5
@@ -311,8 +311,8 @@ check_nothing_unanswered() {
         bad "nothing left unanswered" "no install transcript, the claim would be vacuous"
     elif ! grep -q 'Starting up the partitioner' "$INSTALL_SEEN"; then
         bad "nothing left unanswered" "the installer never reached the partitioner"
-    elif grep -q '\[!!\]' "$INSTALL_SEEN"; then
-        bad "nothing left unanswered" "$(grep -m1 -A2 '\[!!\]' "$INSTALL_SEEN" | tr -s ' \n' ' ')"
+    elif grep -q '\[!!*\]' "$INSTALL_SEEN"; then
+        bad "nothing left unanswered" "$(grep -m1 -A2 '\[!!*\]' "$INSTALL_SEEN" | tr -s ' \n' ' ')"
     else
         ok "nothing left unanswered"
     fi

@@ -596,6 +596,24 @@ test_smoke_stage_order() {
     esac
 }
 
+test_smoke_prompt_detection() {
+    local marker out
+    for marker in '[!]' '[!!]'; do
+        printf ' %s Configure the network\n No network interfaces detected\n' "$marker" > "$TMP/seen.txt"
+        out=$(smoke '
+            SEEN="$1"
+            snapshot() { :; }
+            qemu_running() { return 0; }
+            MARK=1
+            reach "stage after the dialog" "Detecting disks" 4
+        ' "$TMP/seen.txt")
+        case "$out" in
+            *"d-i is asking:"*"No network interfaces"*) pass "smoke: a $marker dialog is reported as a question" ;;
+            *) fail "smoke: a $marker dialog is reported as a question" "$out" ;;
+        esac
+    done
+}
+
 test_smoke_disk_count() {
     equals "smoke: two disks by default" \
         "-drive file=/w/d1.qcow2,if=virtio,format=qcow2 -drive file=/w/d2.qcow2,if=virtio,format=qcow2" \
@@ -637,6 +655,7 @@ main() {
     test_boot_config
     test_smoke_serial_wiring
     test_smoke_stage_order
+    test_smoke_prompt_detection
     test_smoke_disk_count
 
     echo
