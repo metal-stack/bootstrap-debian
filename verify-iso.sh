@@ -84,6 +84,9 @@ check_no_serial_console() {
 check_custom_files() {
     test -s "$CHECK/custom/authorized_keys"
     test -s "$CHECK/custom/disk-setup.sh"
+    test -s "$CHECK/custom/networkd-handover.sh"
+    grep -q 'sh /cdrom/custom/networkd-handover.sh;' "$CHECK/preseed.cfg" \
+      || die "late_command does not hand DHCP to systemd-networkd"
 }
 
 check_early_command() {

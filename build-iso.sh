@@ -78,6 +78,7 @@ case "$ISO_VARIANT" in
         OUTPUT_NAME="debian-$DEBIAN_RELEASE-unattended$LAYOUT_SUFFIX$SWAP_SUFFIX.iso"
         VOLUME_ID="Debian $DEBIAN_RELEASE $LAYOUT_NAME"
         EXTRA_DEBS=""
+        PKGSEL_INCLUDE="$PKGSEL_INCLUDE systemd-resolved"
         OFFLINE_ONLY="# "
         APT_SERVICES="security, updates"
         PKGSEL_UPGRADE="full-upgrade"
@@ -89,7 +90,7 @@ case "$ISO_VARIANT" in
         SRC_NAME="debian-$DEBIAN_RELEASE-amd64-netinst.iso"
         OUTPUT_NAME="debian-$DEBIAN_RELEASE-unattended-offline$LAYOUT_SUFFIX$SWAP_SUFFIX.iso"
         VOLUME_ID="Debian $DEBIAN_RELEASE $LAYOUT_NAME Offline"
-        EXTRA_DEBS="unattended-upgrades"
+        EXTRA_DEBS="unattended-upgrades systemd-resolved"
         OFFLINE_ONLY=""
         APT_SERVICES=""
         PKGSEL_UPGRADE="none"
@@ -532,6 +533,7 @@ add_custom_files() {
     mkdir -p "$WORK_DIR/custom"
     cp "$SCRIPT_DIR/custom/disk-setup.sh" \
        "$SCRIPT_DIR/custom/sync-esp.sh" \
+       "$SCRIPT_DIR/custom/networkd-handover.sh" \
        "$WORK_DIR/custom/"
     if [ "$ISO_VARIANT" = "offline" ]; then
         cp "$SCRIPT_DIR/custom/offline-post.sh" "$WORK_DIR/custom/"

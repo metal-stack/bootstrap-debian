@@ -219,6 +219,7 @@ d-i netcfg/dhcp_failed
 d-i netcfg/dhcp_options
 d-i netcfg/get_nameservers
 d-i netcfg/no_default_route
+d-i pkgsel/include
 d-i pkgsel/update-policy
 d-i pkgsel/upgrade
 sh /cdrom/custom/sync-esp.sh;
@@ -235,6 +236,15 @@ KEYS
         '^# d-i apt-setup/use_mirror boolean false$'
     has "offline: late_command calls offline-post.sh" "$TMP/preseed.offline" \
         'sh /cdrom/custom/offline-post\.sh trixie;'
+    has "netinst: late_command hands DHCP to networkd" "$TMP/preseed.netinst" \
+        'sh /cdrom/custom/networkd-handover\.sh;'
+    has "offline: networkd handover runs after the shipped debs are in" "$TMP/preseed.offline" \
+        'offline-post\.sh trixie; sh /cdrom/custom/networkd-handover\.sh;'
+    has "offline: pkgsel sticks to the netinst pool" "$TMP/preseed.offline" \
+        '^d-i pkgsel/include string openssh-server python3 mdadm$'
+    equals "offline: systemd-resolved ships as a deb, the netinst pool lacks it" \
+        "unattended-upgrades systemd-resolved" \
+        "$(ISO_VARIANT=offline run 'echo "$EXTRA_DEBS"')"
 }
 
 lvmok_mountpoints() {
@@ -282,9 +292,9 @@ KEYS
     has "single: early_command asks for the single layout" "$TMP/preseed.single" \
         'disk-setup\.sh single yes$'
     has "raid1: mdadm installed for the arrays" "$TMP/preseed.netinst" \
-        '^d-i pkgsel/include string openssh-server python3 mdadm$'
+        '^d-i pkgsel/include string openssh-server python3 mdadm systemd-resolved$'
     has "single: no mdadm, there is no array" "$TMP/preseed.single" \
-        '^d-i pkgsel/include string openssh-server python3$'
+        '^d-i pkgsel/include string openssh-server python3 systemd-resolved$'
 
     has "single: the recipe declares an LVM physical volume" "$TMP/preseed.single" \
         'method\{ lvm \}'
@@ -397,6 +407,37 @@ test_disk_setup() {
     else
         pass "disk-setup single: no disk aborts"
     fi
+}
+
+networkd_handover() {
+    local root="$TMP/handover" bin="$TMP/handover-bin"
+    rm -rf "$root"
+    mkdir -p "$root/target/etc/systemd" "$root/net/enp1s0f0np0" "$bin"
+    printf '%s\n' "$1" > "$root/interfaces"
+    echo "90:5a:08:79:6f:5c" > "$root/net/enp1s0f0np0/address"
+    printf '#!/bin/sh\necho "in-target $*"\n' > "$bin/in-target"
+    chmod +x "$bin/in-target"
+    PATH="$bin:$PATH" TARGET_ROOT="$root/target" INSTALLER_INTERFACES="$root/interfaces" \
+        SYS_CLASS_NET="$root/net" sh "$REPO/custom/networkd-handover.sh" 2>&1
+}
+
+test_networkd_handover() {
+    local out file="$TMP/handover/target/etc/systemd/network/99-installer-dhcp.network"
+    out=$(networkd_handover "$(printf 'auto lo\niface lo inet loopback\nallow-hotplug enp1s0f0np0\niface enp1s0f0np0 inet dhcp')")
+    has "handover: the network file matches the installer's DHCP interface by MAC" \
+        "$file" '^MACAddress=90:5a:08:79:6f:5c$'
+    has "handover: the interface keeps DHCP" "$file" '^DHCP=yes$'
+    equals "handover: networkd is enabled, then ifupdown purged" \
+        "in-target systemctl enable systemd-networkd;in-target apt-get purge -y ifupdown" \
+        "$(grep '^in-target' <<< "$out" | tr '\n' ';' | sed 's/;$//')"
+
+    out=$(networkd_handover "$(printf 'auto lo\niface lo inet loopback')")
+    if [ -e "$file" ]; then
+        fail "handover: no DHCP interface writes no network file" "found $file"
+    else
+        pass "handover: no DHCP interface writes no network file"
+    fi
+    lacks_text "handover: no DHCP interface leaves ifupdown in place" "$out" 'purge'
 }
 
 lacks_text() {
@@ -662,6 +703,7 @@ main() {
     test_disk_parent
     test_disk_setup_partition_numbers
     test_disk_setup
+    test_networkd_handover
     test_layout_image_names
     test_swap
     test_serial_validation
