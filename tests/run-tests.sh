@@ -219,6 +219,7 @@ d-i netcfg/dhcp_failed
 d-i netcfg/dhcp_options
 d-i netcfg/get_nameservers
 d-i netcfg/no_default_route
+d-i pkgsel/include
 d-i pkgsel/update-policy
 d-i pkgsel/upgrade
 sh /cdrom/custom/sync-esp.sh;
@@ -235,6 +236,11 @@ KEYS
         '^# d-i apt-setup/use_mirror boolean false$'
     has "offline: late_command calls offline-post.sh" "$TMP/preseed.offline" \
         'sh /cdrom/custom/offline-post\.sh trixie;'
+    has "offline: pkgsel sticks to the netinst pool" "$TMP/preseed.offline" \
+        '^d-i pkgsel/include string openssh-server python3 mdadm$'
+    equals "offline: systemd-resolved ships as a deb, the netinst pool lacks it" \
+        "unattended-upgrades systemd-resolved" \
+        "$(ISO_VARIANT=offline run 'echo "$EXTRA_DEBS"')"
 }
 
 lvmok_mountpoints() {
@@ -282,9 +288,9 @@ KEYS
     has "single: early_command asks for the single layout" "$TMP/preseed.single" \
         'disk-setup\.sh single yes$'
     has "raid1: mdadm installed for the arrays" "$TMP/preseed.netinst" \
-        '^d-i pkgsel/include string openssh-server python3 mdadm$'
+        '^d-i pkgsel/include string openssh-server python3 mdadm systemd-resolved$'
     has "single: no mdadm, there is no array" "$TMP/preseed.single" \
-        '^d-i pkgsel/include string openssh-server python3$'
+        '^d-i pkgsel/include string openssh-server python3 systemd-resolved$'
 
     has "single: the recipe declares an LVM physical volume" "$TMP/preseed.single" \
         'method\{ lvm \}'
