@@ -533,6 +533,7 @@ add_custom_files() {
     mkdir -p "$WORK_DIR/custom"
     cp "$SCRIPT_DIR/custom/disk-setup.sh" \
        "$SCRIPT_DIR/custom/sync-esp.sh" \
+       "$SCRIPT_DIR/custom/networkd-handover.sh" \
        "$WORK_DIR/custom/"
     if [ "$ISO_VARIANT" = "offline" ]; then
         cp "$SCRIPT_DIR/custom/offline-post.sh" "$WORK_DIR/custom/"

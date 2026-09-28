@@ -93,7 +93,7 @@ d-i grub-installer/bootdev string default
 ### Finishing up the installation
 d-i preseed/late_command string \
  cp -r /cdrom/custom /target/custom; \
- sh /cdrom/custom/sync-esp.sh; @LATE_OFFLINE@@LATE_SERIAL@\
+ sh /cdrom/custom/sync-esp.sh; @LATE_OFFLINE@sh /cdrom/custom/networkd-handover.sh; @LATE_SERIAL@\
  in-target sh -c 'usermod -p "!" root'; \
  in-target sh -c 'mkdir -p --mode=0700 /home/@USERNAME@/.ssh && cat /custom/authorized_keys > /home/@USERNAME@/.ssh/authorized_keys && chmod 0600 /home/@USERNAME@/.ssh/authorized_keys && chown -R 1000:1000 /home/@USERNAME@/.ssh'; \
  in-target sh -c 'sed -i "s/^#\?PermitRootLogin.*$/PermitRootLogin no/g" /etc/ssh/sshd_config'; \

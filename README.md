@@ -190,6 +190,33 @@ priority or at a preseeded value (`question_db_is_visible` in
 The install waits at that dialog; whether it finishes after someone answers
 it at the console has not been tried.
 
+## Network after install
+
+The installed system runs **systemd-networkd and systemd-resolved**, not
+ifupdown. `late_command` runs `custom/networkd-handover.sh`, which writes
+`/etc/systemd/network/99-installer-dhcp.network` for the interface the
+installer got its DHCP lease on, matched by MAC, enables systemd-networkd and
+purges ifupdown. `/etc/resolv.conf` is resolved's stub, so the nameservers
+come from the lease, and they stay there when a later configuration takes over
+the interface.
+
+For someone who sets nothing, the only visible difference is the stack: same
+interface, same DHCP. A machine whose installer got no DHCP lease keeps
+ifupdown and no network, as before.
+
+Why not ifupdown plus resolved: dhcpcd hands its nameservers to resolved
+through the `resolvconf` shim, and on every IPv6 router advertisement it also
+calls `resolvconf -d <if>.ra`. Observed in QEMU: after that call the
+interface had no DNS server left and name resolution failed.
+
+Why a file at `99-`: networkd uses the first matching `.network` file in
+lexical order, so a configuration management tool that later writes its own
+file for the same interface under a lower number wins without deleting this
+one.
+
+`systemd-resolved` comes from the mirror in `pkgsel/include` on netinst and
+as a shipped deb on the offline image, whose netinst pool does not carry it.
+
 ## Target requirements
 
 - **Disks are wiped without confirmation.** `disk-setup.sh` ranks the disks that are not the install medium by size; equal sizes are ordered by device name, so the choice stays the same across boots.
@@ -283,6 +310,10 @@ installing them runs on tags and weekly, in QEMU.
 - **`sync-esp.sh` leaves no message in the transcript.** The mirrored ESP
   only shows up as a second disk that does or does not boot, which is what
   the disk-2 boot checks; a mirror that fails has no message of its own.
+- **The networkd handover was installed by hand, in QEMU, once.** `single`
+  netinst on slirp user networking; `make smoke` only waits for a login prompt
+  and checks no name resolution. Not run for `raid1`, the offline image,
+  or a machine with more than one network card.
 - **The layout assertions read partman's messages** (`RAID1 device#0`,
   `Formatting swap space ...`). A point release that rewords them fails the
   test for a reason that is not a regression.
